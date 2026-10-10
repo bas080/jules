@@ -1,8 +1,9 @@
-import { test, describe, before, after, beforeEach } from 'node:test';
+import { test, describe, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
+import fs from 'node:fs';
 
 const JULES_BIN = path.resolve('./jules');
 
@@ -17,8 +18,10 @@ describe('Jules CLI Tests', () => {
   let serverUrl;
   let mockRequests = [];
   let mockResponses = {};
+  let hookEvents = [];
 
   before(async () => {
+    hookEvents.push('before');
     // Start local mock HTTP server as a Promise
     server = http.createServer((req, res) => {
       let body = '';
@@ -54,12 +57,18 @@ describe('Jules CLI Tests', () => {
   });
 
   after(async () => {
+    hookEvents.push('after');
     await new Promise((resolve) => server.close(resolve));
   });
 
   beforeEach(() => {
+    hookEvents.push('beforeEach');
     mockRequests = [];
     mockResponses = {};
+  });
+
+  afterEach(() => {
+    hookEvents.push('afterEach');
   });
 
   function runCli(args, env = {}) {
@@ -85,6 +94,18 @@ describe('Jules CLI Tests', () => {
       });
     });
   }
+
+  test('test native module hooks (before, beforeEach, afterEach) executed', () => {
+    assert.ok(hookEvents.includes('before'), 'before hook executed');
+    assert.ok(hookEvents.includes('beforeEach'), 'beforeEach hook executed');
+  });
+
+  test('verify .did/hooks/test hook exists and is executable', () => {
+    const hookPath = path.resolve('.did/hooks/test');
+    assert.ok(fs.existsSync(hookPath), '.did/hooks/test should exist');
+    const content = fs.readFileSync(hookPath, 'utf8');
+    assert.match(content, /npm t/);
+  });
 
   test('help command / default output when no command provided', async () => {
     const res = await runCli([]);
