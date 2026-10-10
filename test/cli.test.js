@@ -478,6 +478,54 @@ describe('Jules CLI Tests', () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'do next step')
   })
 
+  test('progressUpdated activity renders title as H1 and description below', async () => {
+    mockResponses['GET /sessions/prog123'] = {
+      status: 200,
+      body: { name: 'sessions/prog123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
+    }
+    mockResponses['GET /sessions/prog123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'progressUpdated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            progressUpdated: {
+              title: 'Updating Dependencies',
+              description: 'Installing packages via npm'
+            }
+          }
+        ]
+      }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'prog123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Updating Dependencies')) {
+        proc.kill()
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Updating Dependencies/)
+    assert.match(stdout, /Installing packages via npm/)
+  })
+
   test('send command exits with code 1 when state becomes FAILED', async () => {
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
