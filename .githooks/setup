@@ -1,0 +1,38 @@
+#!/bin/sh
+# .githooks/setup
+# Sets up the 'did' binary and configures git hooks.
+
+set -e
+
+echo "Starting did setup..."
+
+# 1. Install did binary as documented in README.md
+if command -v did >/dev/null 2>&1; then
+    echo "✅ 'did' is already installed."
+else
+    echo "Installing latest 'did' binary..."
+    curl -sL -o did https://github.com/bas080/did/releases/download/latest/did-linux-x86_64
+    chmod +x did
+    
+    echo "Attempting to move binary to /usr/local/bin (requires sudo)..."
+    if sudo mv did /usr/local/bin/; then
+        echo "✅ 'did' installed to /usr/local/bin/"
+    else
+        echo "❌ Failed to move binary to /usr/local/bin/. Please move it manually: sudo mv did /usr/local/bin/"
+        exit 1
+    fi
+fi
+
+# 2. Configure Git hooks path
+echo "Configuring Git hooks path to .githooks..."
+git config core.hooksPath .githooks
+
+if [ $? -eq 0 ]; then
+    echo "✅ Git hooks configured successfully."
+else
+    echo "❌ Failed to configure Git hooks."
+    exit 1
+fi
+
+echo ""
+echo "Setup complete! You can now use 'did' and your commits will be validated by 'did test'."

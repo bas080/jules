@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-commit hook to ensure repository health before every commit.
+
+echo "Running pre-commit health checks via 'did test'..."
+
+if command -v did >/dev/null 2>&1; then
+    did test
+else
+    cargo run -- test
+fi
+
+RESULT=$?
+
+if [ $RESULT -ne 0 ]; then
+    echo "❌ 'did test' failed. Please resolve health violations before committing."
+    exit 1
+fi
+
+echo "✅ Health checks passed. Proceeding with commit."
+exit 0
