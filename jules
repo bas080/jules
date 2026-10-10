@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import fs from "node:fs";
+import os from "node:os";
 import readline from "node:readline";
 import path from "node:path";
 import { marked } from "marked";
@@ -19,7 +20,7 @@ const BASE_URL = process.env.JULES_API_URL || "https://jules.googleapis.com/v1al
 
 const cachedFetch = NodeFetchCache.create({
   cache: new FileSystemCache({
-    cacheDir: path.join(process.cwd(), '.jules-cache')
+    cacheDir: path.join(os.homedir(), '.jules-cache')
   }),
 });
 
