@@ -15,7 +15,7 @@ marked.setOptions({
 });
 
 const API_KEY = process.env.JULES_API_KEY;
-const BASE_URL = "https://jules.googleapis.com/v1alpha";
+const BASE_URL = process.env.JULES_API_URL || "https://jules.googleapis.com/v1alpha";
 
 const cachedFetch = NodeFetchCache.create({
   cache: new FileSystemCache({
