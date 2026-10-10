@@ -122,13 +122,14 @@ describe('Jules CLI Tests', () => {
     const res = await runCli([])
     assert.strictEqual(res.code, 1)
     assert.match(res.stdout, /Jules CLI - AI Session Manager/)
-    assert.match(res.stdout, /Usage: jules <command> \[arguments\]/)
+    assert.match(res.stdout, /Usage: jules/)
     assert.match(res.stdout, /sessions/)
     assert.match(res.stdout, /sources/)
     assert.match(res.stdout, /cleanup/)
     assert.match(res.stdout, /create/)
     assert.match(res.stdout, /tail/)
     assert.match(res.stdout, /repl/)
+    assert.match(res.stdout, /send/)
   })
 
   test('error when JULES_API_KEY is not set', async () => {
@@ -209,7 +210,7 @@ describe('Jules CLI Tests', () => {
   test('create command fails when prompt is missing', async () => {
     const res = await runCli(['create'])
     assert.strictEqual(res.code, 1)
-    assert.match(res.stderr, /A prompt is required to create a session/)
+    assert.match(res.stderr, /missing required argument 'prompt'/)
   })
 
   test('create command with prompt and --source flag', async () => {
@@ -366,5 +367,65 @@ describe('Jules CLI Tests', () => {
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
     assert.ok(sendMsgReq)
     assert.strictEqual(sendMsgReq.body.prompt, 'hello repl')
+  })
+
+  test('send command fails when --session flag is missing', async () => {
+    const res = await runCli(['send', 'hello world'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /required option '-s, --session <sessionId>' not specified/)
+  })
+
+  test('send command sends message and tails until state becomes COMPLETED', async () => {
+    mockResponses['GET /sessions/123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'agentMessaged',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            agentMessaged: { agentMessage: 'Doing task' }
+          }
+        ]
+      }
+    }
+    mockResponses['POST /sessions/123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+    mockResponses['GET /sessions/123'] = {
+      status: 200,
+      body: { name: 'sessions/123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
+    }
+
+    const res = await runCli(['send', 'do next step', '-s', '123'])
+    assert.strictEqual(res.code, 0)
+    assert.match(res.stdout, /Sending message to session: sessions\/123/)
+    assert.match(res.stdout, /Message sent... Waiting for Jules to complete/)
+    assert.match(res.stdout, /Jules is done. Process exiting/)
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'do next step')
+  })
+
+  test('send command exits with code 1 when state becomes FAILED', async () => {
+    mockResponses['GET /sessions/123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+    mockResponses['GET /sessions/123'] = {
+      status: 200,
+      body: { name: 'sessions/123', state: 'FAILED', updateTime: '2025-01-01T00:00:02Z' }
+    }
+
+    const res = await runCli(['send', 'do next step', '--session', 'sessions/123'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /Session finished with state: FAILED/)
   })
 })
