@@ -1,148 +1,90 @@
-# `jules-runner.mjs`
+# Project Jules
 
-A CLI utility for queueing, parsing, and sequentially dispatching tasks to the **Google Jules API** via standard input (`stdin`).
+Jules is a toolset for interacting with the Jules API (`https://jules.googleapis.com/v1alpha`), designed to manage and monitor AI-driven sessions. The primary interface is a Node.js CLI that allows users to list, tail, and interact with sessions in real-time.
 
-`jules-runner.mjs` allows you to pipe Markdown task lists, plain-text prompts, or issue backlogs directly into an active Jules session while automatically managing session state, polling for completion, and handling session auto-unpausing.
+## CLI Tool (`./jules`)
 
-## Features
+The `jules` executable is the main entry point for session management. It interacts with the `v1alpha` version of the Jules API.
 
-### 1. Multi-Strategy Markdown Task Parser
+### Prerequisites
 
-Parses input from `stdin` and automatically selects the optimal splitting strategy based on structure:
+- **Node.js**: v18 or higher.
+- **Environment Variables**:
+  - `JULES_API_KEY`: Required for authentication with the Jules API.
+  - `JULES_DISABLE_CACHE`: Set to `true` or `1` to bypass API response caching.
 
-* **Horizontal Dividers (`---` or `***`)**: Splits multi-line blocks containing code blocks, tables, or complex lists.
-* **Markdown Headings (`#`, `##`, `###`)**: Splits document sections into separate tasks using headers.
-* **Lists & Checkboxes**: Extracts individual tasks from Markdown bullet points (`-`, `*`, `+`), numbered lists (`1.`), or task checkboxes (`[ ]`, `[x]`).
-* **Plain Text Fallback**: Handles raw text and string redirects (e.g., `<<< 'Check that README was rebranded'`).
+### Usage
 
-### 2. Session Lifecycle & State Management
-
-* **Idle Validation**: Checks that the session is in a valid state (`WAITING_FOR_USER_INPUT`, `AWAITING_APPROVAL`, `COMPLETED`) before attempting to dispatch a prompt.
-* **Task Pickup & Completion Monitoring**: Polls the session state after dispatching a prompt to ensure the task is picked up (transitions to `PLANNING`/`EXECUTING`) and blocks until the turn completes.
-* **Auto-Unpause Handling**: Detects if the session enters a `PAUSED` state at any point during polling and automatically sends an `:unpause` request to resume task execution seamlessly.
-
-### 3. Machine-Readable & Friendly Markdown Logs
-
-Outputs real-time execution progress in standard Markdown.
-
-* Structured headings (`#`, `##`, `###`) for CI log parsers.
-* Blockquotes (`>`) to isolate user prompts.
-* Key-value metadata lists (`- **Session ID**: ...`) for simple regex extraction.
-
-### 4. Safe Dry-Run Mode
-
-Simulates the execution plan without making API calls if no session ID is supplied or when passed the `--dry-run` flag.
-
-## Prerequisites
-
-* **Node.js** (v18 or higher for native `fetch` support)
-* **Jules API Key** configured as an environment variable
-
-## Installation
-
-1. Save the script locally and make it executable:
-```bash
-chmod +x jules-runner.mjs
-
-```
-
-
-2. Set your Google Jules API Key:
 ```bash
 export JULES_API_KEY="your_api_key_here"
-
+./jules <command> [arguments]
 ```
 
-## Usage
+### Commands
 
-### Syntax
-
-```bash
-<input-source> | ./jules-runner.mjs [sessions/<session_id> | <session_id>] [--dry-run]
-
-```
+| Command | Arguments / Options | Description |
+| :--- | :--- | :--- |
+| `sessions` | None | Fetches and displays all available AI sessions in a formatted table (ID, State, Created). |
+| `sources` | None | Lists all available code sources (repositories) registered with the API (Source Name, GitHub Repo, Default Branch). |
+| `cleanup` | None | Archives sessions older than 7 days. |
+| `create "prompt"` | `prompt` (required)<br>`--source <sourceId>` (optional) | Starts a new session with an initial prompt. The optional `--source` flag links the session to a repository (supports source names or short `owner/repo` formats). Once created, automatically starts the REPL for the new session. |
+| `tail <sessionId>` | `sessionId` (optional) | Continuously polls and streams session state changes and activities. If no `sessionId` is provided, it defaults to the latest session. |
+| `repl <sessionId>` | `sessionId` (optional) | Launches an interactive REPL shell to send messages to a session while streaming activity updates in real-time. Defaults to the latest session if no ID is specified. |
 
 ### Examples
 
-#### 1. Piping a Markdown Backlog File
+#### 1. List Available Sessions and Sources
 
 ```bash
-cat backlog.md | ./jules-runner.mjs 6246523458488920156
-
+./jules sessions
+./jules sources
 ```
 
-#### 2. Single Task String Pipe
+#### 2. Create a Session and Enter REPL
 
 ```bash
-./jules-runner.mjs 6246523458488920156 <<< "Fix typo in login route and update README"
-
+./jules create "Fix typo in authentication handler" --source bas080/jules
 ```
 
-#### 3. Previewing Task Parsing (Dry-Run Mode)
-
-Omit the session ID or add `--dry-run`:
+#### 3. Tail an Active Session
 
 ```bash
-cat backlog.md | ./jules-runner.mjs
-# OR
-cat backlog.md | ./jules-runner.mjs 6246523458488920156 --dry-run
-
+./jules tail sessions/14335900485077787419
 ```
 
-## Supported Task Formats
+#### 4. Interactive REPL Chat
 
-The script accepts any of the following input structures in `stdin`:
-
-#### Dividers (`---`)
-
-```markdown
-Fix the user authentication route.
----
-Add unit tests for `/login`.
-Include edge cases for empty passwords.
----
-Update API documentation.
-
+```bash
+./jules repl sessions/14335900485077787419
 ```
 
-#### Headings (`##`)
+### Key Implementations
 
-```markdown
-## Task 1: Refactor Database Pool
-Optimize connection pool size for high concurrency.
+#### Activity Rendering
+To make output human-readable in the terminal, the CLI formats session activities using:
+- **Markdown Rendering**: `marked` and `marked-terminal` format agent and user messages as styled terminal text.
+- **Originator Highlighting**:
+  - `AGENT`: Displayed in blue.
+  - `USER`: Displayed in green.
+  - Other originators: Displayed in magenta.
+- **Specialized Activity Renderers**:
+  - **Plans**: Displays generated plans as a numbered list with titles and step descriptions.
+  - **Status Updates**: Highlights plan approvals, session completion, or session failure reasons.
+  - **Artifacts**:
+    - Git patches (`unidiffPatch`) printed as plain diff text.
+    - Bash execution logs formatted with command, output, and exit code.
 
-## Task 2: Add Logging
-Include request ID in output logs.
+#### Caching & Performance
+- **Persistent Cache**: Uses `node-fetch-cache` with `FileSystemCache` in `.jules-cache` to reduce redundant GET requests.
+- **Cache Bypass**: Setting `JULES_DISABLE_CACHE=true` or `JULES_DISABLE_CACHE=1` bypasses cached responses. Commands fetching active session state or tailing activities automatically bypass the cache for real-time accuracy.
+- **Polling Loop**: `tail` and `repl` commands poll session updates every 3 seconds to log new activities as they arrive.
 
-```
+## Technical Stack
 
-#### Bullet Lists & Checkboxes
-
-```markdown
-- [ ] Fix typo in README
-- [ ] Add input validation on user profile form
-* [x] Update dependencies in package.json
-1. Deploy staging build
-
-```
-
-## State Diagram
-
-```
-[ Input stdin ] ---> [ Parse Markdown Strategy ]
-                            │
-                            ▼
-              [ Wait for Session Idle ] <──────┐
-                            │                  │
-               (If PAUSED)  ├──> [ Auto-Unpause ]
-                            │
-                            ▼
-                [ Send Prompt via API ]
-                            │
-                            ▼
-            [ Wait for Task Pickup & Finish ]
-                            │
-                            ▼
-                 [ Next Task / Summary ]
-
-```
+- **Runtime**: Node.js (ES Modules)
+- **API**: REST (`https://jules.googleapis.com/v1alpha`)
+- **Dependencies**:
+  - `marked`: Markdown parsing.
+  - `marked-terminal`: Terminal markdown styling.
+  - `node-fetch-cache`: Response caching.
+  - `debug`: Logging.
