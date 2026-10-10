@@ -3,13 +3,7 @@
 
 echo "Running pre-commit health checks via 'did test'..."
 
-if command -v did >/dev/null 2>&1 && did help test >/dev/null 2>&1; then
-    did test
-elif [ -x .did/hooks/test ]; then
-    .did/hooks/test
-else
-    npm t
-fi
+did test
 
 RESULT=$?
 
