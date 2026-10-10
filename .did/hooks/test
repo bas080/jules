@@ -1,0 +1,4 @@
+#!/bin/sh
+# did test hook script
+echo "Running did test hook..."
+npm t
