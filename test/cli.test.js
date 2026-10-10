@@ -107,6 +107,16 @@ describe('Jules CLI Tests', () => {
     assert.match(content, /npm t/);
   });
 
+  test('verify .did/hooks close, done, and show hooks exist and print UI testing instructions', () => {
+    for (const hookName of ['close', 'done', 'show']) {
+      const hookPath = path.resolve(`.did/hooks/${hookName}`);
+      assert.ok(fs.existsSync(hookPath), `.did/hooks/${hookName} should exist`);
+      const output = execSync(hookPath, { encoding: 'utf8' });
+      assert.match(output, /Changes to the user interface should be user tested/);
+      assert.match(output, /looks and behaves perfect/);
+    }
+  });
+
   test('help command / default output when no command provided', async () => {
     const res = await runCli([]);
     assert.strictEqual(res.code, 1);
