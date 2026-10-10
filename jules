@@ -257,8 +257,11 @@ async function tail(sessionId) {
         lastUpdateTime = session.updateTime;
       }
     } catch (err) {
-
-      console.error(`\x1b[31mError tailing session: ${err.message}\x1b[0m`);
+      if (err.message && err.message.includes("API Error (404)")) {
+        log(`Session ${fullSessionId} not yet available (404), retrying...`);
+      } else {
+        console.error(`\x1b[31mError tailing session: ${err.message}\x1b[0m`);
+      }
     }
     await new Promise((res) => setTimeout(res, 3000));
   }
@@ -392,8 +395,12 @@ async function repl(sessionId) {
         lastUpdateTime = session.updateTime;
       }
     } catch (err) {
-      console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`);
-      rl.prompt(true);
+      if (err.message && err.message.includes("API Error (404)")) {
+        log(`Session ${fullSessionId} not yet available in REPL loop (404), retrying...`);
+      } else {
+        console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`);
+        rl.prompt(true);
+      }
     }
     
     // Schedule next poll
