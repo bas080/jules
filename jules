@@ -559,8 +559,9 @@ async function main() {
   program
     .command("tail [sessionId]")
     .description("Live-stream session activities (defaults to latest)")
-    .action(async (sessionId) => {
-      let targetSessionId = sessionId;
+    .option("-s, --session <sessionId>", "Session ID to tail")
+    .action(async (sessionId, options) => {
+      let targetSessionId = options.session || sessionId;
       if (!targetSessionId) {
         try {
           const sessions = await fetchSessions();
@@ -581,8 +582,10 @@ async function main() {
   program
     .command("repl [sessionId]")
     .description("Interactive shell to chat with a session")
-    .action(async (sessionId) => {
-      await repl(sessionId);
+    .option("-s, --session <sessionId>", "Session ID for REPL")
+    .action(async (sessionId, options) => {
+      let targetSessionId = options.session || sessionId;
+      await repl(targetSessionId);
     });
 
   program
