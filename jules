@@ -250,7 +250,7 @@ async function tail(sessionId) {
         if (activities.length > lastSeenActivityIndex + 1) {
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
-              printActivity(i, activities[i]);
+              printActivity(i, activities[i], fullSessionId);
             } catch (err) {
               console.error(`\x1b[31mError printing activity ${i}: ${err.message}\x1b[0m`);
             }
@@ -309,7 +309,7 @@ async function sendMessageAndTail(sessionId, message) {
             if (act.sessionCompleted) hasCompletedActivity = true;
             if (act.sessionFailed) hasFailedActivity = true;
             try {
-              printActivity(i, act);
+              printActivity(i, act, fullSessionId);
             } catch (err) {
               console.error(`\x1b[31mError printing activity ${i}: ${err.message}\x1b[0m`);
             }
@@ -341,7 +341,7 @@ async function sendMessageAndTail(sessionId, message) {
   }
 }
 
-function printActivity(index, activity) {
+function printActivity(index, activity, sessionId = null) {
   log(`Printing Activity ${index}: %O`, activity);
   const time = activity.createTime ? `\x1b[90m[${activity.createTime}]\x1b[0m ` : "";
   const originator = activity.originator || "Unknown";
@@ -392,7 +392,16 @@ function printActivity(index, activity) {
       value.forEach((art, i) => {
         console.log(`\x1b[32mArtifact ${i}:\x1b[0m`);
         if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
-          console.log(art.changeSet.gitPatch.unidiffPatch);
+          const patchContent = art.changeSet.gitPatch.unidiffPatch;
+          console.log(patchContent);
+          try {
+            const cleanId = sessionId ? sessionId.replace(/^sessions\//, "") : "session";
+            const tmpPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`);
+            fs.writeFileSync(tmpPath, patchContent, "utf8");
+            console.log(`\x1b[36m📄 Patch saved to:\x1b[0m ${tmpPath}\n`);
+          } catch (err) {
+            console.error(`\x1b[31mFailed to save patch file: ${err.message}\x1b[0m`);
+          }
         } else if (art.bashOutput) {
           const bash = art.bashOutput;
           console.log(`\x1b[90mCommand:\x1b[0m ${bash.command}`);
@@ -464,7 +473,7 @@ async function repl(sessionId) {
         if (activities.length > lastSeenActivityIndex + 1) {
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
-              printActivity(i, activities[i]);
+              printActivity(i, activities[i], fullSessionId);
             } catch (err) {
               console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`);
             }

@@ -4,6 +4,7 @@ import { spawn, execSync } from 'node:child_process'
 import http from 'node:http'
 import path from 'node:path'
 import fs from 'node:fs'
+import os from 'node:os'
 
 const JULES_BIN = path.resolve('./jules')
 
@@ -524,6 +525,62 @@ describe('Jules CLI Tests', () => {
 
     assert.match(stdout, /Updating Dependencies/)
     assert.match(stdout, /Installing packages via npm/)
+  })
+
+  test('git patch artifact is saved to /tmp and path is outputted', async () => {
+    mockResponses['GET /sessions/patch123'] = {
+      status: 200,
+      body: { name: 'sessions/patch123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
+    }
+    mockResponses['GET /sessions/patch123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'artifactGenerated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            artifacts: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: '--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n'
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Patch saved to:')) {
+        proc.kill()
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    const expectedFile = path.join(os.tmpdir(), 'jules-patch123.patch')
+    assert.match(stdout, /Patch saved to:/)
+    assert.ok(fs.existsSync(expectedFile))
+    const content = fs.readFileSync(expectedFile, 'utf8')
+    assert.match(content, /\+new/)
   })
 
   test('send command exits with code 1 when state becomes FAILED', async () => {
