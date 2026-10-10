@@ -323,6 +323,40 @@ describe('Jules CLI Tests', () => {
     assert.match(stdout, /Hello from agent/)
   })
 
+  test('tail command works with --session option', async () => {
+    mockResponses['GET /sessions/target456'] = {
+      status: 200,
+      body: { name: 'sessions/target456', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/target456/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '--session=target456'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Tailing session: sessions/target456')) {
+        proc.kill()
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Tailing session: sessions\/target456/)
+  })
+
   test('repl command streams activity and sends message', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
@@ -367,6 +401,40 @@ describe('Jules CLI Tests', () => {
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
     assert.ok(sendMsgReq)
     assert.strictEqual(sendMsgReq.body.prompt, 'hello repl')
+  })
+
+  test('repl command works with --session option', async () => {
+    mockResponses['GET /sessions/15877429925913768090'] = {
+      status: 200,
+      body: { name: 'sessions/15877429925913768090', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/15877429925913768090/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', '--session=15877429925913768090'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill()
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Jules REPL started for session: sessions\/15877429925913768090/)
   })
 
   test('send command fails when --session flag is missing', async () => {
