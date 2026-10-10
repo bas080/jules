@@ -371,6 +371,12 @@ function printActivity(index, activity) {
     console.log("");
   } else if (activity.planApproved) {
     console.log(`\n\x1b[32m✔ Plan Approved (ID: ${activity.planApproved.planId})\x1b[0m\n`);
+  } else if (activity.progressUpdated) {
+    const prog = activity.progressUpdated;
+    let md = "";
+    if (prog.title) md += `# ${prog.title}\n\n`;
+    if (prog.description) md += `${prog.description}\n`;
+    if (md) console.log(`\n${marked.parse(md)}\n`);
   } else if (activity.sessionCompleted) {
     console.log(`\n\x1b[32m🎉 Session Completed Successfully\x1b[0m\n`);
   } else if (activity.sessionFailed && activity.sessionFailed.reason) {
@@ -380,7 +386,7 @@ function printActivity(index, activity) {
 
   // 3. Print Structured Data
   for (const [key, value] of Object.entries(activity)) {
-    if (["type", "createTime", "name", "originator", "agentMessaged", "userMessaged", "id", "planGenerated", "planApproved", "sessionCompleted", "sessionFailed"].includes(key)) continue;
+    if (["type", "createTime", "name", "originator", "agentMessaged", "userMessaged", "id", "planGenerated", "planApproved", "sessionCompleted", "sessionFailed", "progressUpdated"].includes(key)) continue;
     
     if (key === "artifacts" && Array.isArray(value)) {
       value.forEach((art, i) => {
