@@ -13,9 +13,11 @@ The `jules` executable is the main entry point for session management. It intera
 | `sessions` | None | Fetches and displays all available sessions, including their ID, current state, and creation time. |
 | `sources` | None | Lists all available code sources (repositories) registered with the API. |
 | `cleanup` | None | Archives sessions older than one week. |
-| `create "prompt"` | `prompt` (required) | Creates a new session with an initial prompt. Supports optional `--source <sourceId>` to link to a repository. |
+| `create "prompt"` | `prompt` (required) | Creates a new session with an initial prompt. Supports `--source <sourceId>` and `@filepath` file attachments. |
 | `tail <sessionId>` | `sessionId` (optional) | Continuously polls the API for a specific session. It reports state changes and prints new activities as they occur. If no ID is provided, it defaults to the latest session. |
-| `repl <sessionId>` | `sessionId` (optional) | An interactive shell that allows sending messages to a session while simultaneously tailing its activity log in the background. |
+| `repl <sessionId>` | `sessionId` (optional) | An interactive shell that allows sending messages to a session. Supports REPL commands `/upload <filepath>`, `/approve [planId]`, `/help`, and `@filepath` syntax. |
+| `approve [planId]` | `-s, --session <sessionId>` (required) | Approves a generated plan for a session. |
+| `send [message]` | `-s, --session <sessionId>` (required) | Sends a message to a session and tails until completion. Supports positional message, stdin, and `@filepath` file attachments. |
 
 ### Key Implementations
 

@@ -65,6 +65,27 @@ function readAndFormatLocalFile(filepath) {
   return `\n\n--- File: ${relPath} ---\n\`\`\`${lang}\n${content}\n\`\`\``;
 }
 
+function expandAtFilepaths(promptText) {
+  if (!promptText) return promptText;
+  const atMatches = promptText.match(/(?:^|\s)@([^\s]+)/g);
+  if (!atMatches) return promptText;
+
+  let fileAdditions = "";
+  for (const rawMatch of atMatches) {
+    const match = rawMatch.trim();
+    const filepath = match.slice(1);
+    const resolvedPath = path.resolve(filepath);
+    const exists = fs.existsSync(resolvedPath);
+
+    if (exists) {
+      fileAdditions += readAndFormatLocalFile(filepath);
+    } else if (filepath.startsWith("./") || filepath.startsWith("../") || filepath.startsWith("/") || filepath.startsWith("~")) {
+      throw new Error(`File not found: ${filepath}`);
+    }
+  }
+  return promptText + fileAdditions;
+}
+
 async function readStdin() {
   if (process.stdin.isTTY) {
     return "";
@@ -552,6 +573,23 @@ async function repl(sessionId) {
   let lastSeenActivityIndex = -1;
   let lastState = null;
   let lastUpdateTime = null;
+  let isBusy = false;
+  const messageQueue = [];
+
+  async function flushQueue() {
+    if (messageQueue.length > 0 && !isBusy) {
+      const nextPrompt = messageQueue.shift();
+      console.log(`\n\x1b[36m📤 Sending queued message to Jules...\x1b[0m`);
+      isBusy = true;
+      try {
+        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: nextPrompt });
+        console.log(`\x1b[90m(Message sent... Agent is thinking...)\x1b[0m`);
+      } catch (err) {
+        console.error(`\x1b[31mError sending queued message: ${err.message}\x1b[0m`);
+        isBusy = false;
+      }
+    }
+  }
 
   async function poll() {
     try {
@@ -560,6 +598,11 @@ async function repl(sessionId) {
       if (session.state !== lastState) {
         process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
         lastState = session.state;
+        if (session.state === "AWAITING_USER_INPUT" || session.state === "COMPLETED") {
+          isBusy = false;
+        } else if (session.state === "IN_PROGRESS" || session.state === "ACTIVE") {
+          isBusy = true;
+        }
         rl.prompt(true);
       }
 
@@ -579,6 +622,11 @@ async function repl(sessionId) {
           rl.prompt(true);
         }
         lastUpdateTime = session.updateTime;
+      }
+
+      if (session.state === "AWAITING_USER_INPUT") {
+        isBusy = false;
+        await flushQueue();
       }
     } catch (err) {
       if (err.message && err.message.includes("API Error (404)")) {
@@ -607,8 +655,43 @@ async function repl(sessionId) {
       console.log("\n\x1b[1mAvailable REPL Commands:\x1b[0m");
       console.log("  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content");
       console.log("  \x1b[32m/approve [planId]\x1b[0m    Approve a generated plan");
+      console.log("  \x1b[32m/now [message]\x1b[0m       Force send a message immediately even if Jules is busy");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
+      rl.prompt();
+      return;
+    }
+
+    if (text.startsWith("/now")) {
+      const remaining = text.slice(4).trim();
+      let promptToSend = remaining;
+      if (!promptToSend && messageQueue.length > 0) {
+        promptToSend = messageQueue.shift();
+      }
+      if (!promptToSend) {
+        console.error("\x1b[31m❌ Error: /now requires a message or a queued message to send.\x1b[0m");
+        rl.prompt();
+        return;
+      }
+      try {
+        promptToSend = expandAtFilepaths(promptToSend);
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+        rl.prompt();
+        return;
+      }
+      isBusy = true;
+      try {
+        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: promptToSend });
+        console.log(`\x1b[90m(Message sent immediately... Agent is thinking...)\x1b[0m`);
+        clearTimeout(tailTimeout);
+        tailTimeout = setTimeout(async () => {
+          await poll();
+        }, 2000);
+      } catch (err) {
+        console.error(`\x1b[31mError sending message: ${err.message}\x1b[0m`);
+        isBusy = false;
+      }
       rl.prompt();
       return;
     }
@@ -645,12 +728,18 @@ async function repl(sessionId) {
       const filepath = parts[1];
       try {
         const formatted = readAndFormatLocalFile(filepath);
-        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: formatted.trim() });
-        console.log(`\x1b[90m(File uploaded... Agent is thinking...)\x1b[0m`);
-        clearTimeout(tailTimeout);
-        tailTimeout = setTimeout(async () => {
-          await poll();
-        }, 2000);
+        if (isBusy) {
+          messageQueue.push(formatted.trim());
+          console.log(`\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /now to send immediately)\x1b[0m`);
+        } else {
+          isBusy = true;
+          await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: formatted.trim() });
+          console.log(`\x1b[90m(File uploaded... Agent is thinking...)\x1b[0m`);
+          clearTimeout(tailTimeout);
+          tailTimeout = setTimeout(async () => {
+            await poll();
+          }, 2000);
+        }
       } catch (err) {
         console.error(`\x1b[31m❌ Error uploading file: ${err.message}\x1b[0m`);
       }
@@ -659,27 +748,22 @@ async function repl(sessionId) {
     }
 
     let promptToSend = text;
-    const atMatches = text.match(/@([^\s]+)/g);
-    if (atMatches) {
-      let fileAdditions = "";
-      let hasError = false;
-      for (const match of atMatches) {
-        const filepath = match.slice(1);
-        try {
-          fileAdditions += readAndFormatLocalFile(filepath);
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file '${filepath}': ${err.message}\x1b[0m`);
-          hasError = true;
-          break;
-        }
-      }
-      if (hasError) {
-        rl.prompt();
-        return;
-      }
-      promptToSend += fileAdditions;
+    try {
+      promptToSend = expandAtFilepaths(text);
+    } catch (err) {
+      console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+      rl.prompt();
+      return;
     }
 
+    if (isBusy) {
+      messageQueue.push(promptToSend);
+      console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /now to send immediately)\x1b[0m`);
+      rl.prompt();
+      return;
+    }
+
+    isBusy = true;
     try {
       await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: promptToSend });
       console.log(`\x1b[90m(Message sent... Agent is thinking...)\x1b[0m`);
@@ -691,6 +775,7 @@ async function repl(sessionId) {
       }, 2000);
     } catch (err) {
       console.error(`\x1b[31mError sending message: ${err.message}\x1b[0m`);
+      isBusy = false;
     }
     rl.prompt();
   });
@@ -738,18 +823,15 @@ async function main() {
 
   program
     .command("create <prompt>")
-    .description("Start a new session with an initial prompt")
+    .description("Start a new session with an initial prompt (supports @filepath)")
     .option("--source <sourceId>", "Link the session to a specific code source")
-    .option("-f, --file <filepath>", "Attach content of a local file")
     .action(async (prompt, options) => {
       let finalPrompt = prompt;
-      if (options.file) {
-        try {
-          finalPrompt += readAndFormatLocalFile(options.file);
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-          process.exit(1);
-        }
+      try {
+        finalPrompt = expandAtFilepaths(prompt);
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+        process.exit(1);
       }
       const newSessionId = await createSession(finalPrompt, options.source);
       await repl(newSessionId);
@@ -780,11 +862,10 @@ async function main() {
 
   program
     .command("repl [sessionIdOrPrompt]")
-    .description("Interactive shell to chat with a session")
+    .description("Interactive shell to chat with a session (supports /upload, /approve, /help, @filepath)")
     .option("-s, --session <sessionId>", "Session ID for REPL")
     .option("-c, --create", "Create a new session (requires a prompt argument)")
     .option("--source <sourceId>", "Link or filter by a specific code source")
-    .option("-f, --file <filepath>", "Attach content of a local file")
     .action(async (sessionIdOrPrompt, options) => {
       if (options.create) {
         if (options.session) {
@@ -796,13 +877,11 @@ async function main() {
           process.exit(1);
         }
         let initialPrompt = sessionIdOrPrompt;
-        if (options.file) {
-          try {
-            initialPrompt += readAndFormatLocalFile(options.file);
-          } catch (err) {
-            console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-            process.exit(1);
-          }
+        try {
+          initialPrompt = expandAtFilepaths(sessionIdOrPrompt);
+        } catch (err) {
+          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+          process.exit(1);
         }
         const newSessionId = await createSession(initialPrompt, options.source);
         await repl(newSessionId);
@@ -869,26 +948,22 @@ async function main() {
 
   program
     .command("send [message]")
-    .description("Send a message to a session and tail until status is done/completed")
+    .description("Send a message to a session and tail until status is done/completed (supports stdin and @filepath)")
     .requiredOption("-s, --session <sessionId>", "Session ID to send message to")
-    .option("-f, --file <filepath>", "Attach content of a local file")
     .action(async (message, options) => {
       let promptText = message;
       if (!promptText || promptText === "-") {
         promptText = await readStdin();
         promptText = promptText.trim();
       }
-      if (options.file) {
-        try {
-          const formatted = readAndFormatLocalFile(options.file);
-          promptText = promptText ? promptText + formatted : formatted.trim();
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-          process.exit(1);
-        }
-      }
       if (!promptText) {
         console.error("\x1b[31m❌ Error: A message or stdin input is required for send command.\x1b[0m");
+        process.exit(1);
+      }
+      try {
+        promptText = expandAtFilepaths(promptText);
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
         process.exit(1);
       }
       await sendMessageAndTail(options.session, promptText);
