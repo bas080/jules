@@ -934,4 +934,254 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /Session finished with state: FAILED/)
   })
+
+  test('create command with -f / --file attaches local file content', async () => {
+    const tmpFile = path.join(os.tmpdir(), 'sample-create-test.txt')
+    fs.writeFileSync(tmpFile, 'hello local file content', 'utf8')
+
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/fileCreated123' }
+    }
+    mockResponses['GET /sessions/fileCreated123'] = {
+      status: 200,
+      body: { name: 'sessions/fileCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/fileCreated123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'create', 'initial prompt', '-f', tmpFile], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.ok(postReq)
+    assert.match(postReq.body.prompt, /initial prompt/)
+    assert.match(postReq.body.prompt, /hello local file content/)
+    assert.match(postReq.body.prompt, /--- File: .*sample-create-test.txt ---/)
+
+    fs.unlinkSync(tmpFile)
+  })
+
+  test('create command with non-existent or binary -f flag fails', async () => {
+    const res = await runCli(['create', 'prompt', '-f', '/tmp/nonexistent-file-999.txt'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /Error reading file: File not found/)
+
+    const binFile = path.join(os.tmpdir(), 'sample-image.png')
+    fs.writeFileSync(binFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
+    const resBin = await runCli(['create', 'prompt', '-f', binFile])
+    assert.strictEqual(resBin.code, 1)
+    assert.match(resBin.stderr, /Binary\/image files are not supported/)
+    fs.unlinkSync(binFile)
+  })
+
+  test('send command with -f / --file attaches local file content', async () => {
+    const tmpFile = path.join(os.tmpdir(), 'sample-send-test.js')
+    fs.writeFileSync(tmpFile, 'console.log("send test");', 'utf8')
+
+    mockResponses['GET /sessions/send123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/send123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+    mockResponses['GET /sessions/send123'] = {
+      status: 200,
+      body: { name: 'sessions/send123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
+    }
+
+    const res = await runCli(['send', 'review file', '-s', 'send123', '-f', tmpFile])
+    assert.strictEqual(res.code, 0)
+
+    const sendReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/send123:sendMessage')
+    assert.ok(sendReq)
+    assert.match(sendReq.body.prompt, /review file/)
+    assert.match(sendReq.body.prompt, /console\.log\("send test"\);/)
+
+    fs.unlinkSync(tmpFile)
+  })
+
+  test('repl /upload command uploads local file content', async () => {
+    const tmpFile = path.join(os.tmpdir(), 'repl-upload-test.txt')
+    fs.writeFileSync(tmpFile, 'upload content inside repl', 'utf8')
+
+    mockResponses['GET /sessions/replUp123'] = {
+      status: 200,
+      body: { name: 'sessions/replUp123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replUp123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/replUp123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'replUp123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.stdin.write(`/upload ${tmpFile}\n`)
+      }
+      if (clean.includes('File uploaded... Agent is thinking')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replUp123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.match(sendMsgReq.body.prompt, /upload content inside repl/)
+
+    fs.unlinkSync(tmpFile)
+  })
+
+  test('repl @filepath expansion appends local file content', async () => {
+    const tmpFile = path.join(os.tmpdir(), 'repl-at-test.py')
+    fs.writeFileSync(tmpFile, 'print("at test")', 'utf8')
+
+    mockResponses['GET /sessions/replAt123'] = {
+      status: 200,
+      body: { name: 'sessions/replAt123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replAt123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/replAt123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'replAt123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.stdin.write(`check code @${tmpFile}\n`)
+      }
+      if (clean.includes('Message sent... Agent is thinking')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replAt123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.match(sendMsgReq.body.prompt, /check code @/)
+    assert.match(sendMsgReq.body.prompt, /print\("at test"\)/)
+
+    fs.unlinkSync(tmpFile)
+  })
+
+  test('approve command and repl /approve command approves plan', async () => {
+    mockResponses['POST /sessions/app123:approvePlan'] = {
+      status: 200,
+      body: { planId: 'plan-xyz' }
+    }
+
+    const res = await runCli(['approve', 'plan-xyz', '-s', 'app123'])
+    assert.strictEqual(res.code, 0)
+    assert.match(res.stdout, /Plan approved successfully/)
+
+    const approveReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/app123:approvePlan')
+    assert.ok(approveReq)
+    assert.strictEqual(approveReq.body.planId, 'plan-xyz')
+  })
+
+  test('planGenerated activity displays plan notice text below plan', async () => {
+    mockResponses['GET /sessions/plan123'] = {
+      status: 200,
+      body: { name: 'sessions/plan123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
+    }
+    mockResponses['GET /sessions/plan123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'planGenerated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            planGenerated: {
+              plan: {
+                id: 'plan-123',
+                steps: [
+                  { title: 'Step 1', description: 'Do first step' }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'plan123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('This is a plan generated by Jules')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Plan Generated \(ID: plan-123\)/)
+    assert.match(stdout, /1\. Step 1: Do first step/)
+    assert.match(stdout, /This is a plan generated by Jules\. Type \/approve plan-123 to approve it\./)
+  })
 })
