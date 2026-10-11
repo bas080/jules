@@ -275,7 +275,10 @@ async function sendMessageAndTail(sessionId, message) {
   console.log(`\x1b[36mSending message to session:\x1b[0m ${fullSessionId}...\n`);
 
   let lastSeenActivityIndex = -1;
+  let initialUpdateTime = null;
   try {
+    const session = await apiRequest(fullSessionId, "GET", null, true);
+    initialUpdateTime = session.updateTime;
     const initialActivities = await fetchAllActivities(fullSessionId);
     lastSeenActivityIndex = initialActivities.length - 1;
   } catch (err) {
@@ -286,9 +289,10 @@ async function sendMessageAndTail(sessionId, message) {
   console.log(`\x1b[90m(Message sent... Waiting for Jules to complete...)\x1b[0m\n`);
 
   let lastState = null;
-  let lastUpdateTime = null;
+  let lastUpdateTime = initialUpdateTime;
   let hasCompletedActivity = false;
   let hasFailedActivity = false;
+  let hasStarted = false;
   const startIndex = lastSeenActivityIndex;
 
   while (true) {
@@ -298,6 +302,10 @@ async function sendMessageAndTail(sessionId, message) {
       if (session.state !== lastState) {
         process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
         lastState = session.state;
+      }
+
+      if (session.state === "ACTIVE" || session.state === "IN_PROGRESS") {
+        hasStarted = true;
       }
 
       if (session.updateTime !== lastUpdateTime) {
@@ -319,16 +327,23 @@ async function sendMessageAndTail(sessionId, message) {
         lastUpdateTime = session.updateTime;
       }
 
-      if (lastSeenActivityIndex > startIndex || lastState !== null) {
-        if (session.state === "COMPLETED" || session.state === "AWAITING_USER_INPUT" || hasCompletedActivity) {
-          console.log(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
-          process.exit(0);
-        }
+      if (lastSeenActivityIndex > startIndex || (initialUpdateTime && session.updateTime !== initialUpdateTime)) {
+        hasStarted = true;
+      }
 
-        if (session.state === "FAILED" || session.state === "CANCELLED" || hasFailedActivity) {
-          console.error(`\n\x1b[31m❌ Session finished with state: ${session.state}\x1b[0m\n`);
-          process.exit(1);
-        }
+      if (session.state === "COMPLETED" || hasCompletedActivity) {
+        console.log(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
+        process.exit(0);
+      }
+
+      if (session.state === "FAILED" || session.state === "CANCELLED" || hasFailedActivity) {
+        console.error(`\n\x1b[31m❌ Session finished with state: ${session.state}\x1b[0m\n`);
+        process.exit(1);
+      }
+
+      if (hasStarted && session.state === "AWAITING_USER_INPUT") {
+        console.log(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
+        process.exit(0);
       }
     } catch (err) {
       if (err.message && err.message.includes("API Error (404)")) {
@@ -393,7 +408,6 @@ function printActivity(index, activity, sessionId = null) {
         console.log(`\x1b[32mArtifact ${i}:\x1b[0m`);
         if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
           const patchContent = art.changeSet.gitPatch.unidiffPatch;
-          console.log(patchContent);
           try {
             const cleanId = sessionId ? sessionId.replace(/^sessions\//, "") : "session";
             const tmpPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`);
@@ -598,9 +612,31 @@ async function main() {
     .command("repl [sessionId]")
     .description("Interactive shell to chat with a session")
     .option("-s, --session <sessionId>", "Session ID for REPL")
+    .option("-c, --create", "Create a new session")
+    .option("--source <sourceId>", "Link the new session to a specific code source")
     .action(async (sessionId, options) => {
-      let targetSessionId = options.session || sessionId;
-      await repl(targetSessionId);
+      const explicitSessionId = options.session || (options.create ? null : sessionId);
+
+      if (options.create) {
+        if (options.session) {
+          console.error("\x1b[31m❌ Error: Cannot specify `--session` option when creating a new session.\x1b[0m");
+          process.exit(1);
+        }
+        const initialPrompt = sessionId || "Start REPL session";
+        const newSessionId = await createSession(initialPrompt, options.source);
+        await repl(newSessionId);
+      } else if (explicitSessionId) {
+        if (options.source) {
+          console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing a session ID.\x1b[0m");
+        }
+        await repl(explicitSessionId);
+      } else if (options.source) {
+        const initialPrompt = "Start REPL session";
+        const newSessionId = await createSession(initialPrompt, options.source);
+        await repl(newSessionId);
+      } else {
+        await repl();
+      }
     });
 
   program

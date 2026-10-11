@@ -14,7 +14,7 @@ function stripAnsi (str) {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
 }
 
-describe('Jules CLI Tests', () => {
+describe('Jules CLI Tests', { timeout: 10000 }, () => {
   let server
   let serverPort
   let serverUrl
@@ -252,8 +252,8 @@ describe('Jules CLI Tests', () => {
     proc.stdout.on('data', data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
-      if (clean.includes('Session created successfully') || clean.includes('Jules REPL started')) {
-        proc.kill()
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
       }
     })
 
@@ -312,7 +312,7 @@ describe('Jules CLI Tests', () => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Hello from agent')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
@@ -348,7 +348,7 @@ describe('Jules CLI Tests', () => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Tailing session: sessions/target456')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
@@ -389,7 +389,7 @@ describe('Jules CLI Tests', () => {
         proc.stdin.write('hello repl\n')
       }
       if (clean.includes('Message sent... Agent is thinking')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
@@ -428,7 +428,7 @@ describe('Jules CLI Tests', () => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Jules REPL started for session')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
@@ -436,6 +436,199 @@ describe('Jules CLI Tests', () => {
     const stdout = stripAnsi(rawStdout)
 
     assert.match(stdout, /Jules REPL started for session: sessions\/15877429925913768090/)
+  })
+
+  test('repl -s 123 --source prints warning and connects to session 123', async () => {
+    mockResponses['GET /sessions/123'] = {
+      status: 200,
+      body: { name: 'sessions/123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', '-s', '123', '--source', 'owner/repo'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Warning: Specifying `--source` is not necessary when passing a session ID/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/123/)
+  })
+
+  test('repl --source implicitly creates session and starts REPL', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: {
+        sources: [
+          {
+            name: 'sources/github/owner/repo',
+            githubRepo: { owner: 'owner', repo: 'repo' }
+          }
+        ]
+      }
+    }
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/sourceCreated123' }
+    }
+    mockResponses['GET /sessions/sourceCreated123'] = {
+      status: 200,
+      body: { name: 'sessions/sourceCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/sourceCreated123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', '--source', 'owner/repo'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Creating session/)
+    assert.match(stdout, /Session created successfully!/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/sourceCreated123/)
+  })
+
+  test('repl --create with --session fails', async () => {
+    const res = await runCli(['repl', '--create', '-s', '123'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /Cannot specify `--session` option when creating a new session/)
+  })
+
+  test('repl --create without source creates session and starts REPL', async () => {
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/replCreatedNoSource' }
+    }
+    mockResponses['GET /sessions/replCreatedNoSource'] = {
+      status: 200,
+      body: { name: 'sessions/replCreatedNoSource', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replCreatedNoSource/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', '--create', 'no source prompt'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Creating session/)
+    assert.match(stdout, /Session created successfully!/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/replCreatedNoSource/)
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.ok(postReq)
+    assert.strictEqual(postReq.body.prompt, 'no source prompt')
+    assert.strictEqual(postReq.body.id, undefined)
+  })
+
+  test('repl --create with --source creates session and starts REPL', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: {
+        sources: [
+          {
+            name: 'sources/github/owner/repo',
+            githubRepo: { owner: 'owner', repo: 'repo' }
+          }
+        ]
+      }
+    }
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/replCreated123' }
+    }
+    mockResponses['GET /sessions/replCreated123'] = {
+      status: 200,
+      body: { name: 'sessions/replCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replCreated123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', '--create', '--source', 'owner/repo', 'initial repl prompt'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Creating session/)
+    assert.match(stdout, /Session created successfully!/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/replCreated123/)
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.ok(postReq)
+    assert.strictEqual(postReq.body.prompt, 'initial repl prompt')
+    assert.strictEqual(postReq.body.id, 'sources/github/owner/repo')
   })
 
   test('send command fails when --session flag is missing', async () => {
@@ -516,7 +709,7 @@ describe('Jules CLI Tests', () => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Updating Dependencies')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
@@ -569,7 +762,7 @@ describe('Jules CLI Tests', () => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Patch saved to:')) {
-        proc.kill()
+        proc.kill('SIGKILL')
       }
     })
 
