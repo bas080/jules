@@ -465,7 +465,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('repl command streams activity and sends message', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
-      body: { name: 'sessions/123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
@@ -1084,7 +1084,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     mockResponses['GET /sessions/replUp123'] = {
       status: 200,
-      body: { name: 'sessions/replUp123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/replUp123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/replUp123/activities'] = {
       status: 200,
@@ -1113,7 +1113,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     mockResponses['GET /sessions/replAt123'] = {
       status: 200,
-      body: { name: 'sessions/replAt123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/replAt123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/replAt123/activities'] = {
       status: 200,
@@ -1502,5 +1502,23 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     assert.match(stdout, /Queued Messages \(1\):/)
     assert.match(stdout, /1\. first queued item/)
+  })
+
+  test('repl checks session state before sending directly and queues if IN_PROGRESS', async () => {
+    mockResponses['GET /sessions/stateCheck123'] = {
+      status: 200,
+      body: { name: 'sessions/stateCheck123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/stateCheck123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', 'stateCheck123'], [
+      { trigger: 'Jules REPL started for session', input: 'test message when working' },
+      { trigger: 'Jules is working. Message queued', kill: true }
+    ])
+
+    assert.match(stdout, /Jules is working\. Message queued/)
   })
 })

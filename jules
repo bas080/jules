@@ -847,12 +847,27 @@ async function repl(sessionId, options = {}) {
       return;
     }
 
-    if (isBusy) {
+    if (isBusy || messageQueue.length > 0) {
       messageQueue.push(promptToSend);
       updatePrompt();
       console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
       rl.prompt();
       return;
+    }
+
+    // Check state before sending directly to ensure Jules is not working
+    try {
+      const session = await apiRequest(fullSessionId, "GET", null, true);
+      if (session.state === "IN_PROGRESS" || session.state === "ACTIVE") {
+        isBusy = true;
+        messageQueue.push(promptToSend);
+        updatePrompt();
+        console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
+        rl.prompt();
+        return;
+      }
+    } catch (err) {
+      log(`Pre-send session state check failed: ${err.message}`);
     }
 
     isBusy = true;
