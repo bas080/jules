@@ -345,7 +345,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -452,7 +452,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'intertail123'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'intertail123', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -835,7 +835,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'prog123'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'prog123', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -890,7 +890,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch123'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch123', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -948,7 +948,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch456', '--git-patch'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch456', '--git-patch', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -1222,7 +1222,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'plan123'], {
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'plan123', '--history'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -1545,5 +1545,56 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     assert.match(stdout, /Rate limit reached \(HTTP 429\)\. Retrying with backoff\.\.\./)
     assert.doesNotMatch(stdout, /RESOURCE_EXHAUSTED/)
+  })
+
+  test('repl /clear command clears console output', async () => {
+    mockResponses['GET /sessions/clear123'] = {
+      status: 200,
+      body: { name: 'sessions/clear123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/clear123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', 'clear123'], [
+      { trigger: 'Jules REPL started for session', input: '/clear' },
+      { trigger: 'clear123 >', kill: true }
+    ])
+
+    assert.ok(stdout.includes('clear123 >'))
+  })
+
+  test('repl skips past activity history by default unless --history is passed', async () => {
+    mockResponses['GET /sessions/hist123'] = {
+      status: 200,
+      body: { name: 'sessions/hist123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:01Z' }
+    }
+    mockResponses['GET /sessions/hist123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'agentMessaged',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            agentMessaged: { agentMessage: 'Past history message' }
+          }
+        ]
+      }
+    }
+
+    // Default: does not print past history message
+    const resDefault = await runRepl(['repl', 'hist123'], [
+      { trigger: 'Jules REPL started for session', kill: true }
+    ])
+    assert.doesNotMatch(resDefault.stdout, /Past history message/)
+
+    // With --history: prints past history message
+    const resHistory = await runRepl(['repl', 'hist123', '--history'], [
+      { trigger: 'Past history message', kill: true }
+    ])
+    assert.match(resHistory.stdout, /Past history message/)
   })
 })
