@@ -144,7 +144,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
       status: 200,
       body: {
         sessions: [
-          { name: 'sessions/123', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
+          { name: 'sessions/123', source: 'sources/github/owner/repo', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
         ]
       }
     }
@@ -153,6 +153,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(res.code, 0)
     assert.match(res.stdout, /Fetching sessions/)
     assert.match(res.stdout, /sessions\/123/)
+    assert.match(res.stdout, /sources\/github\/owner\/repo/)
     assert.match(res.stdout, /ACTIVE/)
     assert.strictEqual(mockRequests.length, 1)
     assert.strictEqual(mockRequests[0].headers['x-goog-api-key'], 'test-key')

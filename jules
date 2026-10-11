@@ -140,14 +140,15 @@ function listSessionsFromList(sessions) {
       return;
     }
 
-    let table = "| ID | State | Created |\n";
-    table += "| --- | --- | --- |\n";
+    let table = "| ID | Source | State | Created |\n";
+    table += "| --- | --- | --- | --- |\n";
     
     sessions.forEach(s => {
       const id = s.name || s.id || "unknown";
+      const source = s.source || s.sourceId || "none";
       const state = s.state || "unknown";
       const created = s.createTime || "unknown";
-      table += `| ${id} | ${state} | ${created} |\n`;
+      table += `| ${id} | ${source} | ${state} | ${created} |\n`;
     });
 
     console.log(marked.parse(table));
