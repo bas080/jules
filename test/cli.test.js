@@ -422,7 +422,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
 
-    assert.match(stdout, /--- Step Interdiff \(Changes in this turn\) ---/)
+    assert.match(stdout, /Step Interdiff:/)
     assert.match(stdout, /\+line 3/)
   })
 
