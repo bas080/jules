@@ -655,34 +655,71 @@ async function main() {
     });
 
   program
-    .command("repl [sessionId]")
+    .command("repl [sessionIdOrPrompt]")
     .description("Interactive shell to chat with a session")
     .option("-s, --session <sessionId>", "Session ID for REPL")
-    .option("-c, --create", "Create a new session")
-    .option("--source <sourceId>", "Link the new session to a specific code source")
-    .action(async (sessionId, options) => {
-      const explicitSessionId = options.session || (options.create ? null : sessionId);
-
+    .option("-c, --create", "Create a new session (requires a prompt argument)")
+    .option("--source <sourceId>", "Link or filter by a specific code source")
+    .action(async (sessionIdOrPrompt, options) => {
       if (options.create) {
         if (options.session) {
           console.error("\x1b[31m❌ Error: Cannot specify `--session` option when creating a new session.\x1b[0m");
           process.exit(1);
         }
-        const initialPrompt = sessionId || "Start REPL session";
-        const newSessionId = await createSession(initialPrompt, options.source);
+        if (!sessionIdOrPrompt) {
+          console.error("\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m");
+          process.exit(1);
+        }
+        const newSessionId = await createSession(sessionIdOrPrompt, options.source);
         await repl(newSessionId);
-      } else if (explicitSessionId) {
+        return;
+      }
+
+      const explicitSessionId = options.session || sessionIdOrPrompt;
+
+      if (explicitSessionId) {
         if (options.source) {
-          console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing a session ID.\x1b[0m");
+          console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing an explicit session ID.\x1b[0m");
         }
         await repl(explicitSessionId);
-      } else if (options.source) {
-        const initialPrompt = "Start REPL session";
-        const newSessionId = await createSession(initialPrompt, options.source);
-        await repl(newSessionId);
-      } else {
-        await repl();
+        return;
       }
+
+      if (options.source) {
+        let fullSourceId = options.source;
+        if (!fullSourceId.startsWith("sources/")) {
+          try {
+            const sources = await fetchSources();
+            const matched = sources.find(s => s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === options.source);
+            if (matched) fullSourceId = matched.name;
+          } catch (err) {
+            log(`Failed to resolve source in REPL: ${err.message}`);
+          }
+        }
+
+        try {
+          const sessions = await fetchSessions();
+          const matchingSessions = sessions.filter(s => {
+            const sSource = s.source || s.sourceId;
+            return sSource === fullSourceId || sSource === options.source;
+          });
+
+          if (matchingSessions.length === 0) {
+            console.error(`\x1b[31m❌ Error: No existing sessions found for source '${options.source}'. Pass '--create <prompt>' to start a new session.\x1b[0m`);
+            process.exit(1);
+          }
+
+          const latestSession = matchingSessions[0].name || matchingSessions[0].id;
+          console.log(`\x1b[90mConnecting to latest session for ${options.source}: ${latestSession}\x1b[0m`);
+          await repl(latestSession);
+        } catch (err) {
+          console.error(`\x1b[31m❌ Error fetching sessions for source: ${err.message}\x1b[0m`);
+          process.exit(1);
+        }
+        return;
+      }
+
+      await repl();
     });
 
   program
