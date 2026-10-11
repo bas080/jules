@@ -123,7 +123,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
         proc.kill('SIGKILL')
       }, 10000)
 
-      proc.stdout.on('data', data => {
+      const onData = data => {
         rawStdout += data.toString()
         const clean = stripAnsi(rawStdout)
 
@@ -139,7 +139,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
             }
           }
         }
-      })
+      }
+
+      proc.stdout.on('data', onData)
+      proc.stderr.on('data', onData)
 
       proc.on('close', code => {
         clearTimeout(timer)
@@ -186,7 +189,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const res = await runCli(['sessions'])
     assert.strictEqual(res.code, 0)
-    assert.match(res.stdout, /Fetching sessions/)
+    assert.match(res.stderr, /Fetching sessions/)
     assert.match(res.stdout, /sessions\/123/)
     assert.match(res.stdout, /sources\/github\/owner\/repo/)
     assert.match(res.stdout, /ACTIVE/)
@@ -213,7 +216,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const res = await runCli(['sources'])
     assert.strictEqual(res.code, 0)
-    assert.match(res.stdout, /Fetching sources/)
+    assert.match(res.stderr, /Fetching sources/)
     assert.match(res.stdout, /sources\/github\/owner\/repo/)
     assert.match(res.stdout, /owner\/repo/)
     assert.match(res.stdout, /main/)
@@ -239,9 +242,9 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const res = await runCli(['cleanup'])
     assert.strictEqual(res.code, 0)
-    assert.match(res.stdout, /Cleaning up old sessions/)
-    assert.match(res.stdout, /Archived:.*sessions\/old/)
-    assert.match(res.stdout, /Successfully archived 1 sessions/)
+    assert.match(res.stderr, /Cleaning up old sessions/)
+    assert.match(res.stderr, /Archived:.*sessions\/old/)
+    assert.match(res.stderr, /Successfully archived 1 sessions/)
   })
 
   test('create command fails when prompt is missing', async () => {
@@ -285,13 +288,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Jules REPL started for session')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -344,13 +349,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Hello from agent')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -380,13 +387,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Tailing session: sessions/target456')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -447,13 +456,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('line 3')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -653,33 +664,16 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
     mockResponses['GET /sessions/replCreatedNoSource'] = {
       status: 200,
-      body: { name: 'sessions/replCreatedNoSource', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/replCreatedNoSource', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/replCreatedNoSource/activities'] = {
       status: 200,
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', '--create', 'no source prompt'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', '--create', 'no source prompt'], [
+      { trigger: 'Jules REPL started for session', kill: true }
+    ])
 
     assert.match(stdout, /Creating session/)
     assert.match(stdout, /Session created successfully!/)
@@ -709,33 +703,16 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
     mockResponses['GET /sessions/replCreated123'] = {
       status: 200,
-      body: { name: 'sessions/replCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/replCreated123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/replCreated123/activities'] = {
       status: 200,
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', '--create', '--source', 'owner/repo', 'initial repl prompt'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', '--create', '--source', 'owner/repo', 'initial repl prompt'], [
+      { trigger: 'Jules REPL started for session', kill: true }
+    ])
 
     assert.match(stdout, /Creating session/)
     assert.match(stdout, /Session created successfully!/)
@@ -779,14 +756,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     proc.stdin.write('prompt from stdin\n')
     proc.stdin.end()
 
-    let rawStdout = ''
-    proc.stdout.on('data', data => { rawStdout += data.toString() })
+    let rawOutput = ''
+    proc.stdout.on('data', data => { rawOutput += data.toString() })
+    proc.stderr.on('data', data => { rawOutput += data.toString() })
 
     await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const output = stripAnsi(rawOutput)
 
-    assert.match(stdout, /Sending message to session: sessions\/123/)
-    assert.match(stdout, /Jules is done. Process exiting/)
+    assert.match(output, /Sending message to session: sessions\/123/)
+    assert.match(output, /Jules is done. Process exiting/)
 
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
     assert.ok(sendMsgReq)
@@ -819,9 +797,9 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const res = await runCli(['send', 'do next step', '-s', '123'])
     assert.strictEqual(res.code, 0)
-    assert.match(res.stdout, /Sending message to session: sessions\/123/)
-    assert.match(res.stdout, /Message sent... Waiting for Jules to complete/)
-    assert.match(res.stdout, /Jules is done. Process exiting/)
+    assert.match(res.stderr, /Sending message to session: sessions\/123/)
+    assert.match(res.stderr, /Message sent... Waiting for Jules to complete/)
+    assert.match(res.stderr, /Jules is done. Process exiting/)
 
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
     assert.ok(sendMsgReq)
@@ -861,13 +839,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Updating Dependencies')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -914,13 +894,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('Patch saved to:')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
@@ -1036,14 +1018,15 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     proc.stdin.write('prompt from omitted argument stdin\n')
     proc.stdin.end()
 
-    let rawStdout = ''
-    proc.stdout.on('data', data => { rawStdout += data.toString() })
+    let rawOutput = ''
+    proc.stdout.on('data', data => { rawOutput += data.toString() })
+    proc.stderr.on('data', data => { rawOutput += data.toString() })
 
     await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const output = stripAnsi(rawOutput)
 
-    assert.match(stdout, /Sending message to session: sessions\/sendStdin123/)
-    assert.match(stdout, /Jules is done. Process exiting/)
+    assert.match(output, /Sending message to session: sessions\/sendStdin123/)
+    assert.match(output, /Jules is done. Process exiting/)
 
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendStdin123:sendMessage')
     assert.ok(sendMsgReq)
@@ -1188,19 +1171,21 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     })
 
     let rawStdout = ''
-    proc.stdout.on('data', data => {
+    const onData = data => {
       rawStdout += data.toString()
       const clean = stripAnsi(rawStdout)
       if (clean.includes('This is a plan generated by Jules')) {
         proc.kill('SIGKILL')
       }
-    })
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
 
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
 
     assert.match(stdout, /Plan Generated \(ID: plan-123\)/)
-    assert.match(stdout, /1\. Step 1: Do first step/)
+    assert.match(stdout, /1\. \*\*Step 1\*\*: Do first step/)
     assert.match(stdout, /This is a plan generated by Jules\. Type \/approve to approve it\./)
   })
 
@@ -1235,32 +1220,16 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
     mockResponses['GET /sessions/email123'] = {
       status: 200,
-      body: { name: 'sessions/email123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/email123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/email123/activities'] = {
       status: 200,
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'create', 'contact me at foo@example.com for info'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
+    await runRepl(['create', 'contact me at foo@example.com for info'], [
+      { trigger: 'Jules REPL started for session', kill: true }
+    ])
 
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
@@ -1277,26 +1246,9 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', 'label123'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('owner/repo:label123 >')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', 'label123'], [
+      { trigger: 'owner/repo:label123 >', kill: true }
+    ])
 
     assert.match(stdout, /owner\/repo:label123 >/)
   })
@@ -1361,26 +1313,9 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', 'pull123', '--git-pull'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes("Running 'git pull'") || clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', 'pull123', '--git-pull'], [
+      { trigger: "Running 'git pull'", kill: true }
+    ])
 
     assert.match(stdout, /Running 'git pull'/)
   })
@@ -1395,29 +1330,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', 'rename123'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('owner/repo:rename123 >')) {
-        proc.stdin.write('/rename custom-session-name\n')
-      }
-      if (clean.includes('REPL prompt renamed to: custom-session-name')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', 'rename123'], [
+      { trigger: 'Jules REPL started for session', input: '/rename custom-session-name' },
+      { trigger: 'REPL prompt renamed to: custom-session-name', kill: true }
+    ])
 
     assert.match(stdout, /owner\/repo:rename123 >/)
     assert.match(stdout, /REPL prompt renamed to: custom-session-name/)
@@ -1433,30 +1349,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', 'name123', '--name', 'my-custom-prompt'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let step = 0
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('State: IN_PROGRESS') && step === 0) {
-        step = 1
-        proc.stdin.write('queued message test\n')
-      } else if (clean.includes('Message queued') && step === 1) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', 'name123', '--name', 'my-custom-prompt'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued message test' },
+      { trigger: 'Message queued', kill: true }
+    ])
 
     assert.match(stdout, /my-custom-prompt >/)
     assert.match(stdout, /my-custom-prompt \[1\] >/)
