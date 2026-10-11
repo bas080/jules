@@ -1463,4 +1463,81 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
 
     assert.match(stdout, /Running 'git pull'/)
   })
+
+  test('repl /rename command renames prompt label and overwrites source:sessionId', async () => {
+    mockResponses['GET /sessions/rename123'] = {
+      status: 200,
+      body: { name: 'sessions/rename123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/rename123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'rename123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('owner/repo:rename123 >')) {
+        proc.stdin.write('/rename custom-session-name\n')
+      }
+      if (clean.includes('REPL prompt renamed to: custom-session-name')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /owner\/repo:rename123 >/)
+    assert.match(stdout, /REPL prompt renamed to: custom-session-name/)
+  })
+
+  test('repl --name sets custom prompt label and displays queue count when busy', async () => {
+    mockResponses['GET /sessions/name123'] = {
+      status: 200,
+      body: { name: 'sessions/name123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/name123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'name123', '--name', 'my-custom-prompt'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let step = 0
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('State: IN_PROGRESS') && step === 0) {
+        step = 1
+        proc.stdin.write('queued message test\n')
+      } else if (clean.includes('Message queued') && step === 1) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /my-custom-prompt >/)
+    assert.match(stdout, /my-custom-prompt \[1\] >/)
+  })
 })
