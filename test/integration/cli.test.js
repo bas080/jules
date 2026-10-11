@@ -182,6 +182,16 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(out, /repl/)
     assert.match(out, /approve/)
     assert.match(out, /send/)
+    assert.match(out, /-s, --session/)
+    assert.match(out, /--source/)
+  })
+
+  test('--help flag displays top-level options including --session and --source', async () => {
+    const res = await runCli(['--help'])
+    assert.strictEqual(res.code, 0)
+    const out = res.stdout + res.stderr
+    assert.match(out, /-s, --session/)
+    assert.match(out, /--source/)
   })
 
   test('error when JULES_API_KEY is not set', async () => {

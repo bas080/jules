@@ -22,6 +22,15 @@ export async function runCli (argv = process.argv) {
   const parser = yargs(args)
     .scriptName('jules')
     .usage('Jules CLI - AI Session Manager\n\nUsage: $0 <command> [options]')
+    .option('s', {
+      alias: 'session',
+      type: 'string',
+      describe: 'Session ID to target or operate on'
+    })
+    .option('source', {
+      type: 'string',
+      describe: 'Link or filter by a specific code source (e.g. owner/repo or sources/...)'
+    })
     .option('api-key', {
       type: 'string',
       describe: 'API key for Google Jules API authentication (env: JULES_API_KEY)'
