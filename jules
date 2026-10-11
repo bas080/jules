@@ -547,13 +547,19 @@ async function repl(sessionId) {
     }
   }
   const fullSessionId = targetSessionId.startsWith("sessions/") ? targetSessionId : `sessions/${targetSessionId}`;
-  let promptLabel = "jules";
+  const shortSessionId = fullSessionId.replace(/^sessions\//, "");
+  let promptLabel = shortSessionId;
 
   try {
     const sessionInfo = await apiRequest(fullSessionId, "GET", null, true);
-    const source = sessionInfo.source || sessionInfo.sourceId;
+    let source = sessionInfo.source || sessionInfo.sourceId;
     if (source) {
-      promptLabel = `jules (${source})`;
+      if (source.startsWith("sources/github/")) {
+        source = source.replace(/^sources\/github\//, "");
+      } else if (source.startsWith("sources/")) {
+        source = source.replace(/^sources\//, "");
+      }
+      promptLabel = `${source}:${shortSessionId}`;
     }
   } catch (err) {
     log(`Failed to fetch session info for prompt source label: ${err.message}`);
@@ -578,14 +584,15 @@ async function repl(sessionId) {
 
   async function flushQueue() {
     if (messageQueue.length > 0 && !isBusy) {
-      const nextPrompt = messageQueue.shift();
-      console.log(`\n\x1b[36m📤 Sending queued message to Jules...\x1b[0m`);
+      const combinedPayload = messageQueue.join("\n\n---\n\n");
+      messageQueue.length = 0;
+      console.log(`\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m`);
       isBusy = true;
       try {
-        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: nextPrompt });
+        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: combinedPayload });
         console.log(`\x1b[90m(Message sent... Agent is thinking...)\x1b[0m`);
       } catch (err) {
-        console.error(`\x1b[31mError sending queued message: ${err.message}\x1b[0m`);
+        console.error(`\x1b[31mError sending queued messages: ${err.message}\x1b[0m`);
         isBusy = false;
       }
     }
@@ -655,35 +662,42 @@ async function repl(sessionId) {
       console.log("\n\x1b[1mAvailable REPL Commands:\x1b[0m");
       console.log("  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content");
       console.log("  \x1b[32m/approve [planId]\x1b[0m    Approve a generated plan");
-      console.log("  \x1b[32m/now [message]\x1b[0m       Force send a message immediately even if Jules is busy");
+      console.log("  \x1b[32m/flush [message]\x1b[0m     Flush and send queued message(s) immediately");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
+      console.log("\x1b[1mCLI Options / Flags:\x1b[0m");
+      console.log("  \x1b[36m-s, --session <sessionId>\x1b[0m Select target session ID");
+      console.log("  \x1b[36m-c, --create\x1b[0m              Create a new session (requires prompt)");
+      console.log("  \x1b[36m--source <sourceId>\x1b[0m       Link or filter by source repository\n");
       rl.prompt();
       return;
     }
 
-    if (text.startsWith("/now")) {
-      const remaining = text.slice(4).trim();
-      let promptToSend = remaining;
-      if (!promptToSend && messageQueue.length > 0) {
-        promptToSend = messageQueue.shift();
+    if (text.startsWith("/flush") || text.startsWith("/now")) {
+      const cmdLength = text.startsWith("/flush") ? 6 : 4;
+      const remaining = text.slice(cmdLength).trim();
+      if (remaining) {
+        let expanded = remaining;
+        try {
+          expanded = expandAtFilepaths(remaining);
+        } catch (err) {
+          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+          rl.prompt();
+          return;
+        }
+        messageQueue.push(expanded);
       }
-      if (!promptToSend) {
-        console.error("\x1b[31m❌ Error: /now requires a message or a queued message to send.\x1b[0m");
+      if (messageQueue.length === 0) {
+        console.error("\x1b[31m❌ Error: /flush requires a message argument or at least one queued message.\x1b[0m");
         rl.prompt();
         return;
       }
-      try {
-        promptToSend = expandAtFilepaths(promptToSend);
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-        rl.prompt();
-        return;
-      }
+      const combinedPayload = messageQueue.join("\n\n---\n\n");
+      messageQueue.length = 0;
       isBusy = true;
       try {
-        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: promptToSend });
-        console.log(`\x1b[90m(Message sent immediately... Agent is thinking...)\x1b[0m`);
+        await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: combinedPayload });
+        console.log(`\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m`);
         clearTimeout(tailTimeout);
         tailTimeout = setTimeout(async () => {
           await poll();
@@ -730,7 +744,7 @@ async function repl(sessionId) {
         const formatted = readAndFormatLocalFile(filepath);
         if (isBusy) {
           messageQueue.push(formatted.trim());
-          console.log(`\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /now to send immediately)\x1b[0m`);
+          console.log(`\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /flush to send immediately)\x1b[0m`);
         } else {
           isBusy = true;
           await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: formatted.trim() });
@@ -758,7 +772,7 @@ async function repl(sessionId) {
 
     if (isBusy) {
       messageQueue.push(promptToSend);
-      console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /now to send immediately)\x1b[0m`);
+      console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
       rl.prompt();
       return;
     }
