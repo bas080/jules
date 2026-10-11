@@ -358,6 +358,74 @@ describe('Jules CLI Tests', { timeout: 10000 }, () => {
     assert.match(stdout, /Tailing session: sessions\/target456/)
   })
 
+  test('tail command computes and displays interdiff for consecutive patch artifacts', async () => {
+    mockResponses['GET /sessions/intertail123'] = {
+      status: 200,
+      body: { name: 'sessions/intertail123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:02Z' }
+    }
+    mockResponses['GET /sessions/intertail123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'artifactGenerated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            artifacts: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: '--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1,2 @@\n+line 1\n+line 2\n'
+                  }
+                }
+              }
+            ]
+          },
+          {
+            id: 'act2',
+            type: 'artifactGenerated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:02Z',
+            artifacts: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: '--- a/file.txt\n+++ b/file.txt\n@@ -0,0 +1,3 @@\n+line 1\n+line 2\n+line 3\n'
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'intertail123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('line 3')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /--- Step Interdiff \(Changes in this turn\) ---/)
+    assert.match(stdout, /\+line 3/)
+  })
+
   test('repl command streams activity and sends message', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
@@ -635,6 +703,46 @@ describe('Jules CLI Tests', { timeout: 10000 }, () => {
     const res = await runCli(['send', 'hello world'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /required option '-s, --session <sessionId>' not specified/)
+  })
+
+  test('send command accepts prompt from stdin', async () => {
+    mockResponses['GET /sessions/123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+    mockResponses['GET /sessions/123'] = {
+      status: 200,
+      body: { name: 'sessions/123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'send', '-', '-s', '123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    proc.stdin.write('prompt from stdin\n')
+    proc.stdin.end()
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => { rawStdout += data.toString() })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Sending message to session: sessions\/123/)
+    assert.match(stdout, /Jules is done. Process exiting/)
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'prompt from stdin')
   })
 
   test('send command sends message and tails until state becomes COMPLETED', async () => {
