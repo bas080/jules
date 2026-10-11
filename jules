@@ -558,44 +558,59 @@ async function repl(sessionId, options = {}) {
   }
   const fullSessionId = targetSessionId.startsWith("sessions/") ? targetSessionId : `sessions/${targetSessionId}`;
   const shortSessionId = fullSessionId.replace(/^sessions\//, "");
-  let promptLabel = shortSessionId;
+  let basePromptLabel = shortSessionId;
 
-  try {
-    const sessionInfo = await apiRequest(fullSessionId, "GET", null, true);
-    let source = sessionInfo.source || sessionInfo.sourceId;
-    if (source) {
-      if (source.startsWith("sources/github/")) {
-        source = source.replace(/^sources\/github\//, "");
-      } else if (source.startsWith("sources/")) {
-        source = source.replace(/^sources\//, "");
+  if (options.name) {
+    basePromptLabel = options.name;
+  } else {
+    try {
+      const sessionInfo = await apiRequest(fullSessionId, "GET", null, true);
+      let source = sessionInfo.source || sessionInfo.sourceId;
+      if (source) {
+        if (source.startsWith("sources/github/")) {
+          source = source.replace(/^sources\/github\//, "");
+        } else if (source.startsWith("sources/")) {
+          source = source.replace(/^sources\//, "");
+        }
+        basePromptLabel = `${source}:${shortSessionId}`;
       }
-      promptLabel = `${source}:${shortSessionId}`;
+    } catch (err) {
+      log(`Failed to fetch session info for prompt source label: ${err.message}`);
     }
-  } catch (err) {
-    log(`Failed to fetch session info for prompt source label: ${err.message}`);
   }
 
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`);
   console.log(`\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n`);
 
+  let isBusy = false;
+  const messageQueue = [];
+
+  function getPromptString() {
+    const queueSuffix = messageQueue.length > 0 ? ` [${messageQueue.length}]` : "";
+    return `\x1b[32m${basePromptLabel}${queueSuffix} > \x1b[0m`;
+  }
+
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `\x1b[32m${promptLabel} > \x1b[0m`
+    prompt: getPromptString()
   });
+
+  function updatePrompt() {
+    rl.setPrompt(getPromptString());
+  }
 
   rl.prompt();
 
   let lastSeenActivityIndex = -1;
   let lastState = null;
   let lastUpdateTime = null;
-  let isBusy = false;
-  const messageQueue = [];
 
   async function flushQueue() {
     if (messageQueue.length > 0 && !isBusy) {
       const combinedPayload = messageQueue.join("\n\n---\n\n");
       messageQueue.length = 0;
+      updatePrompt();
       console.log(`\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m`);
       isBusy = true;
       try {
@@ -672,13 +687,30 @@ async function repl(sessionId, options = {}) {
       console.log("\n\x1b[1mAvailable REPL Commands:\x1b[0m");
       console.log("  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content");
       console.log("  \x1b[32m/approve [planId]\x1b[0m    Approve a generated plan");
+      console.log("  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt");
       console.log("  \x1b[32m/flush [message]\x1b[0m     Flush and send queued message(s) immediately");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
       console.log("\x1b[1mCLI Options / Flags:\x1b[0m");
       console.log("  \x1b[36m-s, --session <sessionId>\x1b[0m Select target session ID");
       console.log("  \x1b[36m-c, --create\x1b[0m              Create a new session (requires prompt)");
-      console.log("  \x1b[36m--source <sourceId>\x1b[0m       Link or filter by source repository\n");
+      console.log("  \x1b[36m--name <name>\x1b[0m             Set custom display name/label for REPL prompt");
+      console.log("  \x1b[36m--source <sourceId>\x1b[0m       Link or filter by source repository");
+      console.log("  \x1b[36m--git-pull\x1b[0m               Run 'git pull' before starting REPL\n");
+      rl.prompt();
+      return;
+    }
+
+    if (text.startsWith("/rename")) {
+      const newName = text.slice(7).trim();
+      if (!newName) {
+        console.error("\x1b[31m❌ Error: /rename requires a <name> argument.\x1b[0m");
+        rl.prompt();
+        return;
+      }
+      basePromptLabel = newName;
+      updatePrompt();
+      console.log(`\x1b[32m✔ REPL prompt renamed to: ${newName}\x1b[0m`);
       rl.prompt();
       return;
     }
@@ -704,6 +736,7 @@ async function repl(sessionId, options = {}) {
       }
       const combinedPayload = messageQueue.join("\n\n---\n\n");
       messageQueue.length = 0;
+      updatePrompt();
       isBusy = true;
       try {
         await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: combinedPayload });
@@ -754,6 +787,7 @@ async function repl(sessionId, options = {}) {
         const formatted = readAndFormatLocalFile(filepath);
         if (isBusy) {
           messageQueue.push(formatted.trim());
+          updatePrompt();
           console.log(`\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /flush to send immediately)\x1b[0m`);
         } else {
           isBusy = true;
@@ -782,6 +816,7 @@ async function repl(sessionId, options = {}) {
 
     if (isBusy) {
       messageQueue.push(promptToSend);
+      updatePrompt();
       console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
       rl.prompt();
       return;
@@ -886,10 +921,11 @@ async function main() {
 
   program
     .command("repl [sessionIdOrPrompt]")
-    .description("Interactive shell to chat with a session (supports /upload, /approve, /help, @filepath)")
+    .description("Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)")
     .option("-s, --session <sessionId>", "Session ID for REPL")
     .option("-c, --create", "Create a new session (requires a prompt argument)")
     .option("--source <sourceId>", "Link or filter by a specific code source")
+    .option("--name <name>", "Set a custom display name/label for the REPL prompt")
     .option("--git-pull", "Automatically run 'git pull' before starting the REPL")
     .action(async (sessionIdOrPrompt, options) => {
       if (options.create) {
