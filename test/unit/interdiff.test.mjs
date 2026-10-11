@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert'
-import { computeInterdiff } from '../interdiff.mjs'
+import { computeInterdiff } from '../../src/interdiff.mjs'
 
 describe('Interdiff Unit Tests', () => {
   test('returns current patch string when previous patch is empty', () => {
