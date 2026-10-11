@@ -603,6 +603,16 @@ async function repl(sessionId) {
       return;
     }
 
+    if (text.startsWith("/help")) {
+      console.log("\n\x1b[1mAvailable REPL Commands:\x1b[0m");
+      console.log("  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content");
+      console.log("  \x1b[32m/approve [planId]\x1b[0m    Approve a generated plan");
+      console.log("  \x1b[32m/help\x1b[0m               Display this help message");
+      console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
+      rl.prompt();
+      return;
+    }
+
     if (text.startsWith("/approve")) {
       const parts = text.split(/\s+/).filter(Boolean);
       const planId = parts[1] || null;
