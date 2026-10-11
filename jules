@@ -149,7 +149,7 @@ async function readStdin() {
   });
 }
 
-async function apiRequest(endpoint, method = "GET", body = null, bypassCache = false) {
+async function apiRequest(endpoint, method = "GET", body = null, bypassCache = false, retries = 2) {
   const disableCacheEnv = process.env.JULES_DISABLE_CACHE === "true" || process.env.JULES_DISABLE_CACHE === "1";
   const shouldBypass = bypassCache || disableCacheEnv;
 
@@ -167,15 +167,27 @@ async function apiRequest(endpoint, method = "GET", body = null, bypassCache = f
   }
 
   const fetcher = shouldBypass ? fetch : cachedFetch;
-  const res = await fetcher(`${BASE_URL}/${endpoint}`, options);
-  if (!res.ok) {
-    const errorText = await res.text();
-    log(`API Error: ${res.status} - ${errorText}`);
-    throw new Error(`API Error (${res.status}): ${errorText}`);
+  let attempt = 0;
+  while (true) {
+    const res = await fetcher(`${BASE_URL}/${endpoint}`, options);
+    if (!res.ok) {
+      const errorText = await res.text();
+      log(`API Error: ${res.status} - ${errorText}`);
+      if (res.status === 429 && attempt < retries) {
+        attempt++;
+        const backoffDelay = process.env.JULES_POLL_INTERVAL ? 10 : attempt * 2000;
+        log(`HTTP 429 encountered in apiRequest. Retrying in ${backoffDelay}ms (attempt ${attempt}/${retries})...`);
+        await new Promise((res) => setTimeout(res, backoffDelay));
+        continue;
+      }
+      const err = new Error(`API Error (${res.status}): ${errorText}`);
+      err.status = res.status;
+      throw err;
+    }
+    const data = await res.json();
+    log(`API Response from ${endpoint}: %O`, data);
+    return data;
   }
-  const data = await res.json();
-  log(`API Response from ${endpoint}: %O`, data);
-  return data;
 }
 
 async function fetchSources() {
@@ -384,6 +396,24 @@ async function createSession(prompt, sourceId = null) {
   return session.name;
 }
 
+function isRateLimitError(err) {
+  return (err && err.status === 429) || (err && err.message && err.message.includes("429"));
+}
+
+function handlePollingError(err, context = "background loop") {
+  if (isRateLimitError(err)) {
+    if (process.env.DEBUG) {
+      console.error(`\x1b[31mError in ${context}: ${err.message}\x1b[0m`);
+    } else {
+      console.error(`\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m`);
+    }
+  } else if (err.message && err.message.includes("API Error (404)")) {
+    log(`Resource not yet available (404), retrying...`);
+  } else {
+    console.error(`\x1b[31mError in ${context}: ${err.message}\x1b[0m`);
+  }
+}
+
 async function tail(sessionId, options = {}) {
   const fullSessionId = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
   console.error(`\x1b[36mTailing session:\x1b[0m ${fullSessionId}...\n`);
@@ -392,7 +422,8 @@ async function tail(sessionId, options = {}) {
   let lastState = null;
   let lastUpdateTime = null;
 
-  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
+  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
+  let currentPollInterval = basePollInterval;
 
   while (true) {
     try {
@@ -420,14 +451,14 @@ async function tail(sessionId, options = {}) {
         }
         lastUpdateTime = session.updateTime;
       }
+      currentPollInterval = basePollInterval;
     } catch (err) {
-      if (err.message && err.message.includes("API Error (404)")) {
-        log(`Session ${fullSessionId} not yet available (404), retrying...`);
-      } else {
-        console.error(`\x1b[31mError tailing session: ${err.message}\x1b[0m`);
+      if (isRateLimitError(err)) {
+        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000);
       }
+      handlePollingError(err, "tail command");
     }
-    await new Promise((res) => setTimeout(res, pollInterval));
+    await new Promise((res) => setTimeout(res, currentPollInterval));
   }
 }
 
@@ -455,7 +486,9 @@ async function sendMessageAndTail(sessionId, message, options = {}) {
   let hasFailedActivity = false;
   let hasStarted = false;
   const startIndex = lastSeenActivityIndex;
-  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
+
+  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
+  let currentPollInterval = basePollInterval;
 
   while (true) {
     try {
@@ -507,14 +540,14 @@ async function sendMessageAndTail(sessionId, message, options = {}) {
         console.error(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
         process.exit(0);
       }
+      currentPollInterval = basePollInterval;
     } catch (err) {
-      if (err.message && err.message.includes("API Error (404)")) {
-        log(`Session ${fullSessionId} not yet available (404), retrying...`);
-      } else {
-        console.error(`\x1b[31mError tailing session: ${err.message}\x1b[0m`);
+      if (isRateLimitError(err)) {
+        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000);
       }
+      handlePollingError(err, "send command");
     }
-    await new Promise((res) => setTimeout(res, pollInterval));
+    await new Promise((res) => setTimeout(res, currentPollInterval));
   }
 }
 
@@ -759,6 +792,9 @@ async function repl(sessionId, options = {}) {
     }
   }
 
+  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
+  let currentPollInterval = basePollInterval;
+
   async function poll() {
     try {
       // Check session state
@@ -807,23 +843,21 @@ async function repl(sessionId, options = {}) {
         isBusy = false;
         await flushQueue();
       }
+      currentPollInterval = basePollInterval;
     } catch (err) {
-      if (err.message && err.message.includes("API Error (404)")) {
-        log(`Session ${fullSessionId} not yet available in REPL loop (404), retrying...`);
-      } else {
-        console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`);
-        rl.prompt(true);
+      if (isRateLimitError(err)) {
+        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000);
       }
+      handlePollingError(err, "REPL background loop");
+      rl.prompt(true);
     }
     
     // Schedule next poll
-    tailTimeout = setTimeout(poll, pollInterval);
+    tailTimeout = setTimeout(poll, currentPollInterval);
   }
 
-  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
-
   // Start polling
-  let tailTimeout = setTimeout(poll, pollInterval);
+  let tailTimeout = setTimeout(poll, currentPollInterval);
 
   rl.on("line", async (line) => {
     const text = line.trim();
@@ -962,7 +996,7 @@ async function repl(sessionId, options = {}) {
         clearTimeout(tailTimeout);
         tailTimeout = setTimeout(async () => {
           await poll();
-        }, Math.min(2000, pollInterval));
+        }, Math.min(2000, basePollInterval));
       } catch (err) {
         console.error(`\x1b[31mError sending message: ${err.message}\x1b[0m`);
         isBusy = false;
