@@ -22,35 +22,33 @@ function getFileContent (filePatch) {
 /**
  * Computes the interdiff (delta) between two cumulative unified diff patch strings (P1 and P2).
  * Both patch strings represent changes relative to the same initial base state.
+ * Output is formatted using standard `git diff` headers.
  *
  * @param {string} patch1Str - The previous cumulative patch string (or empty if first patch).
  * @param {string} patch2Str - The current cumulative patch string.
  * @returns {string} The computed interdiff string showing only changes from P1 to P2.
  */
 export function computeInterdiff (patch1Str, patch2Str) {
-  if (!patch1Str) {
-    return patch2Str || ''
-  }
   if (!patch2Str) {
     return ''
   }
-  if (patch1Str.trim() === patch2Str.trim()) {
+  if (patch1Str && patch1Str.trim() === patch2Str.trim()) {
     return ''
   }
 
-  const parsedP1 = parsePatch(patch1Str)
+  const parsedP1 = patch1Str ? parsePatch(patch1Str) : []
   const parsedP2 = parsePatch(patch2Str)
 
   const mapP1 = new Map()
   for (const filePatch of parsedP1) {
-    const filename = (filePatch.newFileName || filePatch.oldFileName).replace(/^[ab]\//, '')
-    mapP1.set(filename, filePatch)
+    const filename = (filePatch.newFileName || filePatch.oldFileName || '').replace(/^[ab]\//, '')
+    if (filename) mapP1.set(filename, filePatch)
   }
 
   const mapP2 = new Map()
   for (const filePatch of parsedP2) {
-    const filename = (filePatch.newFileName || filePatch.oldFileName).replace(/^[ab]\//, '')
-    mapP2.set(filename, filePatch)
+    const filename = (filePatch.newFileName || filePatch.oldFileName || '').replace(/^[ab]\//, '')
+    if (filename) mapP2.set(filename, filePatch)
   }
 
   const allFiles = new Set([...mapP1.keys(), ...mapP2.keys()])
@@ -72,7 +70,23 @@ export function computeInterdiff (patch1Str, patch2Str) {
         '',
         ''
       )
-      interdiffResult += delta + '\n'
+
+      // Extract hunks from createTwoFilesPatch output (everything starting from the first @@ line)
+      const lines = delta.split('\n')
+      const hunkStartIndex = lines.findIndex(line => line.startsWith('@@'))
+      const hunks = hunkStartIndex !== -1 ? lines.slice(hunkStartIndex).join('\n') : ''
+
+      let header = `diff --git a/${filename} b/${filename}\n`
+      if (!contentP1 && contentP2) {
+        header += `new file mode 100644\n--- /dev/null\n+++ b/${filename}`
+      } else if (contentP1 && !contentP2) {
+        header += `deleted file mode 100644\n--- a/${filename}\n+++ /dev/null`
+      } else {
+        header += `--- a/${filename}\n+++ b/${filename}`
+      }
+
+      const fileDiff = hunks ? `${header}\n${hunks}` : header
+      interdiffResult += fileDiff + '\n'
     }
   }
 
