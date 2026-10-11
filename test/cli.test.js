@@ -130,6 +130,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stdout, /create/)
     assert.match(res.stdout, /tail/)
     assert.match(res.stdout, /repl/)
+    assert.match(res.stdout, /approve/)
     assert.match(res.stdout, /send/)
   })
 
@@ -935,7 +936,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stderr, /Session finished with state: FAILED/)
   })
 
-  test('create command with -f / --file attaches local file content', async () => {
+  test('create command with @filepath attaches local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'sample-create-test.txt')
     fs.writeFileSync(tmpFile, 'hello local file content', 'utf8')
 
@@ -952,7 +953,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'create', 'initial prompt', '-f', tmpFile], {
+    const proc = spawn('node', [JULES_BIN, 'create', `initial prompt @${tmpFile}`], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -974,27 +975,67 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
 
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
-    assert.match(postReq.body.prompt, /initial prompt/)
+    assert.match(postReq.body.prompt, /initial prompt @/)
     assert.match(postReq.body.prompt, /hello local file content/)
     assert.match(postReq.body.prompt, /--- File: .*sample-create-test.txt ---/)
 
     fs.unlinkSync(tmpFile)
   })
 
-  test('create command with non-existent or binary -f flag fails', async () => {
-    const res = await runCli(['create', 'prompt', '-f', '/tmp/nonexistent-file-999.txt'])
+  test('create command with non-existent or binary @filepath fails', async () => {
+    const res = await runCli(['create', 'prompt @/tmp/nonexistent-file-999.txt'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /Error reading file: File not found/)
 
     const binFile = path.join(os.tmpdir(), 'sample-image.png')
     fs.writeFileSync(binFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-    const resBin = await runCli(['create', 'prompt', '-f', binFile])
+    const resBin = await runCli(['create', `prompt @${binFile}`])
     assert.strictEqual(resBin.code, 1)
     assert.match(resBin.stderr, /Binary\/image files are not supported/)
     fs.unlinkSync(binFile)
   })
 
-  test('send command with -f / --file attaches local file content', async () => {
+  test('send command with stdin input (message argument omitted) sends prompt', async () => {
+    mockResponses['GET /sessions/sendStdin123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/sendStdin123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+    mockResponses['GET /sessions/sendStdin123'] = {
+      status: 200,
+      body: { name: 'sessions/sendStdin123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'send', '-s', 'sendStdin123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    proc.stdin.write('prompt from omitted argument stdin\n')
+    proc.stdin.end()
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => { rawStdout += data.toString() })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Sending message to session: sessions\/sendStdin123/)
+    assert.match(stdout, /Jules is done. Process exiting/)
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendStdin123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'prompt from omitted argument stdin')
+  })
+
+  test('send command with @filepath attaches local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'sample-send-test.js')
     fs.writeFileSync(tmpFile, 'console.log("send test");', 'utf8')
 
@@ -1011,12 +1052,12 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
       body: { name: 'sessions/send123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
     }
 
-    const res = await runCli(['send', 'review file', '-s', 'send123', '-f', tmpFile])
+    const res = await runCli(['send', `review file @${tmpFile}`, '-s', 'send123'])
     assert.strictEqual(res.code, 0)
 
     const sendReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/send123:sendMessage')
     assert.ok(sendReq)
-    assert.match(sendReq.body.prompt, /review file/)
+    assert.match(sendReq.body.prompt, /review file @/)
     assert.match(sendReq.body.prompt, /console\.log\("send test"\);/)
 
     fs.unlinkSync(tmpFile)
@@ -1222,6 +1263,88 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Available REPL Commands:/)
     assert.match(stdout, /\/upload <filepath>/)
     assert.match(stdout, /\/approve \[planId\]/)
+    assert.match(stdout, /\/now \[message\]/)
     assert.match(stdout, /\/help/)
+  })
+
+  test('@filepath expansion ignores email addresses and non-path tokens', async () => {
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/email123' }
+    }
+    mockResponses['GET /sessions/email123'] = {
+      status: 200,
+      body: { name: 'sessions/email123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/email123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'create', 'contact me at foo@example.com for info'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.ok(postReq)
+    assert.strictEqual(postReq.body.prompt, 'contact me at foo@example.com for info')
+  })
+
+  test('repl /now command forces sending message immediately when busy', async () => {
+    mockResponses['GET /sessions/replNow123'] = {
+      status: 200,
+      body: { name: 'sessions/replNow123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replNow123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/replNow123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'replNow123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('Jules REPL started for session')) {
+        proc.stdin.write('/now force send message\n')
+      }
+      if (clean.includes('Message sent immediately')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replNow123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'force send message')
   })
 })
