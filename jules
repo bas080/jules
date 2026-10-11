@@ -489,13 +489,25 @@ async function repl(sessionId) {
     }
   }
   const fullSessionId = targetSessionId.startsWith("sessions/") ? targetSessionId : `sessions/${targetSessionId}`;
+  let promptLabel = "jules";
+
+  try {
+    const sessionInfo = await apiRequest(fullSessionId, "GET", null, true);
+    const source = sessionInfo.source || sessionInfo.sourceId;
+    if (source) {
+      promptLabel = `jules (${source})`;
+    }
+  } catch (err) {
+    log(`Failed to fetch session info for prompt source label: ${err.message}`);
+  }
+
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`);
   console.log(`\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n`);
 
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    prompt: `\x1b[32mjules > \x1b[0m`
+    prompt: `\x1b[32m${promptLabel} > \x1b[0m`
   });
 
   rl.prompt();
