@@ -4,6 +4,10 @@
 
 Detailed information regarding Project Jules, its architecture, CLI usage, commands, and technical stack can be found in [`docs/project.md`](docs/project.md).
 
+## Testing Guidelines
+
+When developing or debugging tests, use `node --test --test-name-pattern="<pattern>"` (or `npm test -- --test-name-pattern="<pattern>"`) to run specific tests or sub-suites rather than running the entire test suite every time.
+
 ## Task and Issue Tracker (`did`)
 
 This repository uses `did`, a file-system-native issue and dependency tracker stored in the `.did/` directory.

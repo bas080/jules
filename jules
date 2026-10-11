@@ -688,7 +688,7 @@ async function repl(sessionId, options = {}) {
         lastUpdateTime = session.updateTime;
       }
 
-      if (session.state === "AWAITING_USER_INPUT" || session.state === "AWAITING_USER_FEEDBACK") {
+      if (session.state === "AWAITING_USER_INPUT" || session.state === "AWAITING_USER_FEEDBACK" || session.state === "COMPLETED") {
         isBusy = false;
         await flushQueue();
       }
@@ -702,7 +702,7 @@ async function repl(sessionId, options = {}) {
     }
     
     // Schedule next poll
-    tailTimeout = setTimeout(poll, 3000);
+    tailTimeout = setTimeout(poll, pollInterval);
   }
 
   const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000;
