@@ -1417,4 +1417,22 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     assert.match(stdout, /Jules is working\. Message queued/)
   })
+
+  test('repl /color command changes REPL prompt color', async () => {
+    mockResponses['GET /sessions/color123'] = {
+      status: 200,
+      body: { name: 'sessions/color123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/color123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', 'color123'], [
+      { trigger: 'Jules REPL started for session', input: '/color cyan' },
+      { trigger: 'REPL prompt color set to cyan', kill: true }
+    ])
+
+    assert.match(stdout, /REPL prompt color set to cyan/)
+  })
 })
