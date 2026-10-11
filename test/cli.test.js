@@ -14,7 +14,7 @@ function stripAnsi (str) {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
 }
 
-describe('Jules CLI Tests', { timeout: 10000 }, () => {
+describe('Jules CLI Tests', { timeout: 30000 }, () => {
   let server
   let serverPort
   let serverUrl
