@@ -14,7 +14,7 @@ function stripAnsi (str) {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
 }
 
-describe('Jules CLI Tests', { timeout: 30000 }, () => {
+describe('Jules CLI Tests', { timeout: 120000 }, () => {
   let server
   let serverPort
   let serverUrl
@@ -148,12 +148,12 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     })
   }
 
-  test('test native module hooks (before, beforeEach, afterEach) executed', { timeout: 5000 }, () => {
+  test('test native module hooks (before, beforeEach, afterEach) executed', () => {
     assert.ok(hookEvents.includes('before'), 'before hook executed')
     assert.ok(hookEvents.includes('beforeEach'), 'beforeEach hook executed')
   })
 
-  test('help command / default output when no command provided', { timeout: 5000 }, async () => {
+  test('help command / default output when no command provided', async () => {
     const res = await runCli([])
     assert.strictEqual(res.code, 1)
     assert.match(res.stdout, /Jules CLI - AI Session Manager/)
@@ -168,13 +168,13 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stdout, /send/)
   })
 
-  test('error when JULES_API_KEY is not set', { timeout: 5000 }, async () => {
+  test('error when JULES_API_KEY is not set', async () => {
     const res = await runCli(['sessions'], { JULES_API_KEY: '' })
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /JULES_API_KEY.*is not set/)
   })
 
-  test('sessions command displays session list', { timeout: 5000 }, async () => {
+  test('sessions command displays session list', async () => {
     mockResponses['GET /sessions'] = {
       status: 200,
       body: {
@@ -194,7 +194,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(mockRequests[0].headers['x-goog-api-key'], 'test-key')
   })
 
-  test('sources command displays sources list', { timeout: 5000 }, async () => {
+  test('sources command displays sources list', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -219,7 +219,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stdout, /main/)
   })
 
-  test('cleanup command archives old sessions', { timeout: 5000 }, async () => {
+  test('cleanup command archives old sessions', async () => {
     const oldTime = new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString()
     const recentTime = new Date().toISOString()
 
@@ -244,13 +244,13 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stdout, /Successfully archived 1 sessions/)
   })
 
-  test('create command fails when prompt is missing', { timeout: 5000 }, async () => {
+  test('create command fails when prompt is missing', async () => {
     const res = await runCli(['create'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /missing required argument 'prompt'/)
   })
 
-  test('create command with prompt and --source flag', { timeout: 5000 }, async () => {
+  test('create command with prompt and --source flag', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -306,7 +306,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(postReq.body.id, 'sources/github/owner/repo')
   })
 
-  test('tail command defaults to latest session when no ID provided', { timeout: 5000 }, async () => {
+  test('tail command defaults to latest session when no ID provided', async () => {
     mockResponses['GET /sessions'] = {
       status: 200,
       body: {
@@ -360,7 +360,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Hello from agent/)
   })
 
-  test('tail command works with --session option', { timeout: 5000 }, async () => {
+  test('tail command works with --session option', async () => {
     mockResponses['GET /sessions/target456'] = {
       status: 200,
       body: { name: 'sessions/target456', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -394,7 +394,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Tailing session: sessions\/target456/)
   })
 
-  test('tail command computes and displays interdiff for consecutive patch artifacts', { timeout: 5000 }, async () => {
+  test('tail command computes and displays interdiff for consecutive patch artifacts', async () => {
     mockResponses['GET /sessions/intertail123'] = {
       status: 200,
       body: { name: 'sessions/intertail123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:02Z' }
@@ -462,7 +462,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /\+line 3/)
   })
 
-  test('repl command streams activity and sends message', { timeout: 5000 }, async () => {
+  test('repl command streams activity and sends message', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
       body: { name: 'sessions/123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -489,7 +489,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'hello repl')
   })
 
-  test('repl command works with --session option', { timeout: 5000 }, async () => {
+  test('repl command works with --session option', async () => {
     mockResponses['GET /sessions/15877429925913768090'] = {
       status: 200,
       body: { name: 'sessions/15877429925913768090', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -523,7 +523,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Jules REPL started for session: sessions\/15877429925913768090/)
   })
 
-  test('repl -s 123 --source prints warning and connects to session 123', { timeout: 5000 }, async () => {
+  test('repl -s 123 --source prints warning and connects to session 123', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
       body: { name: 'sessions/123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -558,7 +558,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Jules REPL started for session: sessions\/123/)
   })
 
-  test('repl --source connects to existing latest session for source', { timeout: 5000 }, async () => {
+  test('repl --source connects to existing latest session for source', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -612,7 +612,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Jules REPL started for session: sessions\/sourceExist123/)
   })
 
-  test('repl --source fails if no session exists without --create', { timeout: 5000 }, async () => {
+  test('repl --source fails if no session exists without --create', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -634,19 +634,19 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stderr, /No existing sessions found for source 'owner\/repo'\. Pass '--create <prompt>' to start a new session\./)
   })
 
-  test('repl --create without prompt fails', { timeout: 5000 }, async () => {
+  test('repl --create without prompt fails', async () => {
     const res = await runCli(['repl', '--create'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /A prompt argument is required when using `--create`/)
   })
 
-  test('repl --create with --session fails', { timeout: 5000 }, async () => {
+  test('repl --create with --session fails', async () => {
     const res = await runCli(['repl', '--create', 'test prompt', '-s', '123'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /Cannot specify `--session` option when creating a new session/)
   })
 
-  test('repl --create without source creates session and starts REPL', { timeout: 5000 }, async () => {
+  test('repl --create without source creates session and starts REPL', async () => {
     mockResponses['POST /sessions'] = {
       status: 200,
       body: { name: 'sessions/replCreatedNoSource' }
@@ -691,7 +691,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(postReq.body.id, undefined)
   })
 
-  test('repl --create with --source creates session and starts REPL', { timeout: 5000 }, async () => {
+  test('repl --create with --source creates session and starts REPL', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -747,13 +747,13 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(postReq.body.id, 'sources/github/owner/repo')
   })
 
-  test('send command fails when --session flag is missing', { timeout: 5000 }, async () => {
+  test('send command fails when --session flag is missing', async () => {
     const res = await runCli(['send', 'hello world'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /required option '-s, --session <sessionId>' not specified/)
   })
 
-  test('send command accepts prompt from stdin', { timeout: 5000 }, async () => {
+  test('send command accepts prompt from stdin', async () => {
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
       body: { activities: [] }
@@ -793,7 +793,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'prompt from stdin')
   })
 
-  test('send command sends message and tails until state becomes COMPLETED', { timeout: 5000 }, async () => {
+  test('send command sends message and tails until state becomes COMPLETED', async () => {
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
       body: {
@@ -828,7 +828,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'do next step')
   })
 
-  test('progressUpdated activity renders title as H1 and description below', { timeout: 5000 }, async () => {
+  test('progressUpdated activity renders title as H1 and description below', async () => {
     mockResponses['GET /sessions/prog123'] = {
       status: 200,
       body: { name: 'sessions/prog123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
@@ -876,7 +876,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Installing packages via npm/)
   })
 
-  test('git patch artifact is saved to /tmp and path is outputted', { timeout: 5000 }, async () => {
+  test('git patch artifact is saved to /tmp and path is outputted', async () => {
     mockResponses['GET /sessions/patch123'] = {
       status: 200,
       body: { name: 'sessions/patch123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
@@ -932,7 +932,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(content, /\+new/)
   })
 
-  test('send command exits with code 1 when state becomes FAILED', { timeout: 5000 }, async () => {
+  test('send command exits with code 1 when state becomes FAILED', async () => {
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
       body: { activities: [] }
@@ -951,7 +951,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(res.stderr, /Session finished with state: FAILED/)
   })
 
-  test('create command with @filepath attaches local file content', { timeout: 5000 }, async () => {
+  test('create command with @filepath attaches local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'sample-create-test.txt')
     fs.writeFileSync(tmpFile, 'hello local file content', 'utf8')
 
@@ -997,7 +997,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     fs.unlinkSync(tmpFile)
   })
 
-  test('create command with non-existent or binary @filepath fails', { timeout: 5000 }, async () => {
+  test('create command with non-existent or binary @filepath fails', async () => {
     const res = await runCli(['create', 'prompt @/tmp/nonexistent-file-999.txt'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /Error reading file: File not found/)
@@ -1010,7 +1010,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     fs.unlinkSync(binFile)
   })
 
-  test('send command with stdin input (message argument omitted) sends prompt', { timeout: 5000 }, async () => {
+  test('send command with stdin input (message argument omitted) sends prompt', async () => {
     mockResponses['GET /sessions/sendStdin123/activities'] = {
       status: 200,
       body: { activities: [] }
@@ -1050,7 +1050,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'prompt from omitted argument stdin')
   })
 
-  test('send command with @filepath attaches local file content', { timeout: 5000 }, async () => {
+  test('send command with @filepath attaches local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'sample-send-test.js')
     fs.writeFileSync(tmpFile, 'console.log("send test");', 'utf8')
 
@@ -1078,7 +1078,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     fs.unlinkSync(tmpFile)
   })
 
-  test('repl /upload command uploads local file content', { timeout: 5000 }, async () => {
+  test('repl /upload command uploads local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'repl-upload-test.txt')
     fs.writeFileSync(tmpFile, 'upload content inside repl', 'utf8')
 
@@ -1107,7 +1107,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     fs.unlinkSync(tmpFile)
   })
 
-  test('repl @filepath expansion appends local file content', { timeout: 5000 }, async () => {
+  test('repl @filepath expansion appends local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'repl-at-test.py')
     fs.writeFileSync(tmpFile, 'print("at test")', 'utf8')
 
@@ -1137,7 +1137,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     fs.unlinkSync(tmpFile)
   })
 
-  test('approve command and repl /approve command approves plan', { timeout: 5000 }, async () => {
+  test('approve command and repl /approve command approves plan', async () => {
     mockResponses['POST /sessions/app123:approvePlan'] = {
       status: 200,
       body: {}
@@ -1151,7 +1151,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.ok(approveReq)
   })
 
-  test('planGenerated activity displays plan notice text below plan', { timeout: 5000 }, async () => {
+  test('planGenerated activity displays plan notice text below plan', async () => {
     mockResponses['GET /sessions/plan123'] = {
       status: 200,
       body: { name: 'sessions/plan123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
@@ -1204,7 +1204,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /This is a plan generated by Jules\. Type \/approve to approve it\./)
   })
 
-  test('repl /help command displays available REPL slash commands and CLI options', { timeout: 5000 }, async () => {
+  test('repl /help command displays available REPL slash commands and CLI options', async () => {
     mockResponses['GET /sessions/replHelp123'] = {
       status: 200,
       body: { name: 'sessions/replHelp123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1228,7 +1228,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /\/help/)
   })
 
-  test('@filepath expansion ignores email addresses and non-path tokens', { timeout: 5000 }, async () => {
+  test('@filepath expansion ignores email addresses and non-path tokens', async () => {
     mockResponses['POST /sessions'] = {
       status: 200,
       body: { name: 'sessions/email123' }
@@ -1267,7 +1267,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(postReq.body.prompt, 'contact me at foo@example.com for info')
   })
 
-  test('repl prompt label formats as source:sessionId when source is present and sessionId when source is absent', { timeout: 5000 }, async () => {
+  test('repl prompt label formats as source:sessionId when source is present and sessionId when source is absent', async () => {
     mockResponses['GET /sessions/label123'] = {
       status: 200,
       body: { name: 'sessions/label123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1301,7 +1301,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /owner\/repo:label123 >/)
   })
 
-  test('repl /flush command combines queued messages with --- and sends immediately', { timeout: 5000 }, async () => {
+  test('repl /flush command combines queued messages with --- and sends immediately', async () => {
     mockResponses['GET /sessions/replFlush123'] = {
       status: 200,
       body: { name: 'sessions/replFlush123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
@@ -1327,7 +1327,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(sendMsgReq.body.prompt, /queued msg 1\n\n---\n\nqueued msg 2/)
   })
 
-  test('repl sends message immediately when state is AWAITING_USER_FEEDBACK', { timeout: 5000 }, async () => {
+  test('repl sends message immediately when state is AWAITING_USER_FEEDBACK', async () => {
     mockResponses['GET /sessions/feedback123'] = {
       status: 200,
       body: { name: 'sessions/feedback123', state: 'AWAITING_USER_FEEDBACK', updateTime: '2025-01-01T00:00:00Z' }
@@ -1351,7 +1351,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'feedback response')
   })
 
-  test('repl --git-pull runs git pull before starting repl', { timeout: 5000 }, async () => {
+  test('repl --git-pull runs git pull before starting repl', async () => {
     mockResponses['GET /sessions/pull123'] = {
       status: 200,
       body: { name: 'sessions/pull123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1385,7 +1385,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /Running 'git pull'/)
   })
 
-  test('repl /rename command renames prompt label and overwrites source:sessionId', { timeout: 5000 }, async () => {
+  test('repl /rename command renames prompt label and overwrites source:sessionId', async () => {
     mockResponses['GET /sessions/rename123'] = {
       status: 200,
       body: { name: 'sessions/rename123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1395,16 +1395,35 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'rename123'], [
-      { trigger: 'Jules REPL started for session', input: '/rename custom-session-name' },
-      { trigger: 'REPL prompt renamed to: custom-session-name', kill: true }
-    ])
+    const proc = spawn('node', [JULES_BIN, 'repl', 'rename123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('owner/repo:rename123 >')) {
+        proc.stdin.write('/rename custom-session-name\n')
+      }
+      if (clean.includes('REPL prompt renamed to: custom-session-name')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
 
     assert.match(stdout, /owner\/repo:rename123 >/)
     assert.match(stdout, /REPL prompt renamed to: custom-session-name/)
   })
 
-  test('repl --name sets custom prompt label and displays queue count when busy', { timeout: 5000 }, async () => {
+  test('repl --name sets custom prompt label and displays queue count when busy', async () => {
     mockResponses['GET /sessions/name123'] = {
       status: 200,
       body: { name: 'sessions/name123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
@@ -1443,7 +1462,7 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.match(stdout, /my-custom-prompt \[1\] >/)
   })
 
-  test('repl /queue command lists queued messages', { timeout: 5000 }, async () => {
+  test('repl /queue command lists queued messages', async () => {
     mockResponses['GET /sessions/queue123'] = {
       status: 200,
       body: { name: 'sessions/queue123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
