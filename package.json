@@ -15,6 +15,7 @@
     "@google/jules": "^0.1.42",
     "commander": "^15.0.0",
     "debug": "^4.4.3",
+    "diff": "^9.0.0",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "node-fetch-cache": "^5.1.1"
