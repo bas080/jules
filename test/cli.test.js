@@ -165,16 +165,17 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('help command / default output when no command provided', async () => {
     const res = await runCli([])
     assert.strictEqual(res.code, 1)
-    assert.match(res.stdout, /Jules CLI - AI Session Manager/)
-    assert.match(res.stdout, /Usage: jules/)
-    assert.match(res.stdout, /sessions/)
-    assert.match(res.stdout, /sources/)
-    assert.match(res.stdout, /cleanup/)
-    assert.match(res.stdout, /create/)
-    assert.match(res.stdout, /tail/)
-    assert.match(res.stdout, /repl/)
-    assert.match(res.stdout, /approve/)
-    assert.match(res.stdout, /send/)
+    const out = res.stdout + res.stderr
+    assert.match(out, /Jules CLI - AI Session Manager/)
+    assert.match(out, /Usage: jules/)
+    assert.match(out, /sessions/)
+    assert.match(out, /sources/)
+    assert.match(out, /cleanup/)
+    assert.match(out, /create/)
+    assert.match(out, /tail/)
+    assert.match(out, /repl/)
+    assert.match(out, /approve/)
+    assert.match(out, /send/)
   })
 
   test('error when JULES_API_KEY is not set', async () => {
@@ -255,8 +256,8 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
   test('create command fails when prompt is missing', async () => {
     const res = await runCli(['create'])
-    assert.strictEqual(res.code, 1)
-    assert.match(res.stderr, /missing required argument 'prompt'/)
+    assert.notStrictEqual(res.code, 0)
+    assert.match(res.stderr + res.stdout, /(missing|Not enough|argument)/i)
   })
 
   test('create command with prompt and --source flag', async () => {
@@ -691,6 +692,21 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(postReq.body.id, undefined)
   })
 
+  test('repl --create with invalid --source fails before making create POST request', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: { sources: [] }
+    }
+
+    const res = await runCli(['repl', '--create', '--source', 'invalid/repo', 'my prompt'])
+
+    assert.notStrictEqual(res.code, 0)
+    assert.match(res.stderr + res.stdout, /Source not found: invalid\/repo/)
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.strictEqual(postReq, undefined, 'Must not create session if source resolution fails')
+  })
+
   test('repl --create with --source creates session and starts REPL', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
@@ -733,7 +749,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('send command fails when --session flag is missing', async () => {
     const res = await runCli(['send', 'hello world'])
     assert.strictEqual(res.code, 1)
-    assert.match(res.stderr, /required option '-s, --session <sessionId>' not specified/)
+    assert.match(res.stderr, /(--session|required)/i)
   })
 
   test('send command accepts prompt from stdin', async () => {

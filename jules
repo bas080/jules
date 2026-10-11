@@ -9,7 +9,8 @@ import { marked } from "marked";
 import TerminalRenderer from "marked-terminal";
 import NodeFetchCache, { FileSystemCache } from "node-fetch-cache";
 import debug from "debug";
-import { Command } from "commander";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 import { computeInterdiff } from "./interdiff.mjs";
 
 const log = debug("jules");
@@ -364,19 +365,29 @@ function hasJulesFinishedWork(activities = [], session = {}) {
 async function createSession(prompt, sourceId = null) {
   let finalSourceId = sourceId;
 
-  if (sourceId && !sourceId.startsWith("sources/")) {
-    log(`Attempting to resolve short source ID: ${sourceId}`);
+  if (sourceId !== null && sourceId !== undefined) {
+    if (typeof sourceId !== "string" || !sourceId.trim() || sourceId === "true" || sourceId === "false") {
+      throw new Error(`Invalid source parameter: '${sourceId}'. A valid source string (e.g. owner/repo or sources/...) is required when --source is specified.`);
+    }
+
+    log(`Attempting to resolve source ID: ${sourceId}`);
     try {
       const sources = await fetchSources();
-      const matchedSource = sources.find(s => 
-        s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === sourceId
-      );
-      
-      if (matchedSource) {
-        finalSourceId = matchedSource.name;
-        log(`Resolved ${sourceId} to ${finalSourceId}`);
+      if (!sourceId.startsWith("sources/")) {
+        const matchedSource = sources.find(s =>
+          s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === sourceId
+        );
+        if (matchedSource) {
+          finalSourceId = matchedSource.name;
+          log(`Resolved ${sourceId} to ${finalSourceId}`);
+        } else {
+          throw new Error(`Source not found: ${sourceId}. Please use 'jules sources' to find a valid source name.`);
+        }
       } else {
-        throw new Error(`Source not found: ${sourceId}. Please use 'jules sources' to find a valid source name.`);
+        const exists = sources.some(s => s.name === sourceId || s.id === sourceId);
+        if (!exists && sources.length > 0) {
+          throw new Error(`Source not found: ${sourceId}. Please use 'jules sources' to find a valid source name.`);
+        }
       }
     } catch (err) {
       throw new Error(`Failed to resolve source: ${err.message}`);
@@ -1131,201 +1142,208 @@ async function repl(sessionId, options = {}) {
 }
 
 async function main() {
-  const program = new Command();
+  if (!API_KEY) {
+    console.error("\x1b[31m❌ Error: `JULES_API_KEY` environment variable is not set.\x1b[0m");
+    process.exit(1);
+  }
 
-  program
-    .name("jules")
-    .description("Jules CLI - AI Session Manager");
-
-  program.hook("preAction", () => {
-    if (!API_KEY) {
-      console.error("\x1b[31m❌ Error: `JULES_API_KEY` environment variable is not set.\x1b[0m");
-      process.exit(1);
-    }
-  });
-
-  program
-    .command("sessions")
-    .description("List all available AI sessions")
-    .action(async () => {
+  await yargs(hideBin(process.argv))
+    .scriptName("jules")
+    .usage("Jules CLI - AI Session Manager\n\nUsage: $0 <command> [options]")
+    .command("sessions", "List all available AI sessions", {}, async () => {
       await listSessions();
-    });
-
-  program
-    .command("sources")
-    .description("List available code sources (repositories)")
-    .action(async () => {
+    })
+    .command("sources", "List available code sources (repositories)", {}, async () => {
       await listSources();
-    });
-
-  program
-    .command("cleanup")
-    .description("Archive sessions older than one week")
-    .action(async () => {
+    })
+    .command("cleanup", "Archive sessions older than one week", {}, async () => {
       await cleanup();
-    });
-
-  program
-    .command("create <prompt>")
-    .description("Start a new session with an initial prompt (supports @filepath)")
-    .option("--source <sourceId>", "Link the session to a specific code source")
-    .action(async (prompt, options) => {
-      let finalPrompt = prompt;
-      try {
-        finalPrompt = expandAtFilepaths(prompt);
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-        process.exit(1);
-      }
-      const newSessionId = await createSession(finalPrompt, options.source);
-      await repl(newSessionId);
-    });
-
-  program
-    .command("tail [sessionId]")
-    .description("Live-stream session activities (defaults to latest)")
-    .option("-s, --session <sessionId>", "Session ID to tail")
-    .option("--history", "Fetch and print full activity history on startup")
-    .option("--git-patch", "Automatically apply received git patches to repository")
-    .action(async (sessionId, options) => {
-      let targetSessionId = options.session || sessionId;
-      if (!targetSessionId) {
+    })
+    .command(
+      "create <prompt>",
+      "Start a new session with an initial prompt (supports @filepath)",
+      (y) => {
+        return y
+          .positional("prompt", { type: "string", describe: "Initial prompt for the session" })
+          .option("source", { type: "string", describe: "Link the session to a specific code source" });
+      },
+      async (argv) => {
+        let finalPrompt = argv.prompt;
         try {
-          const sessions = await fetchSessions();
-          if (sessions.length === 0) {
-            console.error("\x1b[31m❌ Error: No sessions found to tail.\x1b[0m");
-            process.exit(1);
-          }
-          targetSessionId = sessions[0].name || sessions[0].id;
-          console.log(`\x1b[90mNo session ID provided. Defaulting to latest: ${targetSessionId}\x1b[0m`);
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error fetching latest session: ${err.message}\x1b[0m`);
-          process.exit(1);
-        }
-      }
-      await tail(targetSessionId, options);
-    });
-
-  program
-    .command("repl [sessionIdOrPrompt]")
-    .description("Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)")
-    .option("-s, --session <sessionId>", "Session ID for REPL")
-    .option("-c, --create", "Create a new session (requires a prompt argument)")
-    .option("--source <sourceId>", "Link or filter by a specific code source")
-    .option("--name <name>", "Set a custom display name/label for the REPL prompt")
-    .option("--history", "Fetch and print full activity history on startup")
-    .option("--git-pull", "Automatically run 'git pull' before starting the REPL")
-    .option("--git-patch", "Automatically apply received git patches to repository")
-    .action(async (sessionIdOrPrompt, options) => {
-      if (options.create) {
-        if (options.session) {
-          console.error("\x1b[31m❌ Error: Cannot specify `--session` option when creating a new session.\x1b[0m");
-          process.exit(1);
-        }
-        if (!sessionIdOrPrompt) {
-          console.error("\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m");
-          process.exit(1);
-        }
-        let initialPrompt = sessionIdOrPrompt;
-        try {
-          initialPrompt = expandAtFilepaths(sessionIdOrPrompt);
+          finalPrompt = expandAtFilepaths(argv.prompt);
         } catch (err) {
           console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
           process.exit(1);
         }
-        const newSessionId = await createSession(initialPrompt, options.source);
-        await repl(newSessionId, options);
-        return;
+        const newSessionId = await createSession(finalPrompt, argv.source);
+        await repl(newSessionId);
       }
-
-      const explicitSessionId = options.session || sessionIdOrPrompt;
-
-      if (explicitSessionId) {
-        if (options.source) {
-          console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing an explicit session ID.\x1b[0m");
-        }
-        await repl(explicitSessionId, options);
-        return;
-      }
-
-      if (options.source) {
-        let fullSourceId = options.source;
-        if (!fullSourceId.startsWith("sources/")) {
+    )
+    .command(
+      "tail [sessionId]",
+      "Live-stream session activities (defaults to latest)",
+      (y) => {
+        return y
+          .positional("sessionId", { type: "string", describe: "Session ID to tail" })
+          .option("s", { alias: "session", type: "string", describe: "Session ID to tail" })
+          .option("history", { type: "boolean", describe: "Fetch and print full activity history on startup" })
+          .option("git-patch", { type: "boolean", describe: "Automatically apply received git patches to repository" });
+      },
+      async (argv) => {
+        let targetSessionId = argv.session || argv.sessionId;
+        if (!targetSessionId) {
           try {
-            const sources = await fetchSources();
-            const matched = sources.find(s => s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === options.source);
-            if (matched) fullSourceId = matched.name;
+            const sessions = await fetchSessions();
+            if (sessions.length === 0) {
+              console.error("\x1b[31m❌ Error: No sessions found to tail.\x1b[0m");
+              process.exit(1);
+            }
+            targetSessionId = sessions[0].name || sessions[0].id;
+            console.log(`\x1b[90mNo session ID provided. Defaulting to latest: ${targetSessionId}\x1b[0m`);
           } catch (err) {
-            log(`Failed to resolve source in REPL: ${err.message}`);
-          }
-        }
-
-        try {
-          const sessions = await fetchSessions();
-          const matchingSessions = sessions.filter(s => {
-            const sSource = s.source || s.sourceId;
-            return sSource === fullSourceId || sSource === options.source;
-          });
-
-          if (matchingSessions.length === 0) {
-            console.error(`\x1b[31m❌ Error: No existing sessions found for source '${options.source}'. Pass '--create <prompt>' to start a new session.\x1b[0m`);
+            console.error(`\x1b[31m❌ Error fetching latest session: ${err.message}\x1b[0m`);
             process.exit(1);
           }
+        }
+        await tail(targetSessionId, argv);
+      }
+    )
+    .command(
+      "repl [sessionIdOrPrompt]",
+      "Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)",
+      (y) => {
+        return y
+          .positional("sessionIdOrPrompt", { type: "string", describe: "Session ID or initial prompt" })
+          .option("s", { alias: "session", type: "string", describe: "Session ID for REPL" })
+          .option("c", { alias: "create", type: "boolean", describe: "Create a new session (requires a prompt argument)" })
+          .option("source", { type: "string", describe: "Link or filter by a specific code source" })
+          .option("name", { type: "string", describe: "Set a custom display name/label for the REPL prompt" })
+          .option("history", { type: "boolean", describe: "Fetch and print full activity history on startup" })
+          .option("git-pull", { type: "boolean", describe: "Automatically run 'git pull' before starting the REPL" })
+          .option("git-patch", { type: "boolean", describe: "Automatically apply received git patches to repository" });
+      },
+      async (argv) => {
+        if (argv.create) {
+          if (argv.session) {
+            console.error("\x1b[31m❌ Error: Cannot specify `--session` option when creating a new session.\x1b[0m");
+            process.exit(1);
+          }
+          if (!argv.sessionIdOrPrompt) {
+            console.error("\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m");
+            process.exit(1);
+          }
+          let initialPrompt = argv.sessionIdOrPrompt;
+          try {
+            initialPrompt = expandAtFilepaths(argv.sessionIdOrPrompt);
+          } catch (err) {
+            console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+            process.exit(1);
+          }
+          const newSessionId = await createSession(initialPrompt, argv.source);
+          await repl(newSessionId, argv);
+          return;
+        }
 
-          const latestSession = matchingSessions[0].name || matchingSessions[0].id;
-          console.log(`\x1b[90mConnecting to latest session for ${options.source}: ${latestSession}\x1b[0m`);
-          await repl(latestSession, options);
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error fetching sessions for source: ${err.message}\x1b[0m`);
+        const explicitSessionId = argv.session || argv.sessionIdOrPrompt;
+
+        if (explicitSessionId) {
+          if (argv.source) {
+            console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing an explicit session ID.\x1b[0m");
+          }
+          await repl(explicitSessionId, argv);
+          return;
+        }
+
+        if (argv.source) {
+          let fullSourceId = argv.source;
+          if (typeof fullSourceId === "string" && !fullSourceId.startsWith("sources/")) {
+            try {
+              const sources = await fetchSources();
+              const matched = sources.find(s => s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === argv.source);
+              if (matched) fullSourceId = matched.name;
+            } catch (err) {
+              log(`Failed to resolve source in REPL: ${err.message}`);
+            }
+          }
+
+          try {
+            const sessions = await fetchSessions();
+            const matchingSessions = sessions.filter(s => {
+              const sSource = s.source || s.sourceId;
+              return sSource === fullSourceId || sSource === argv.source;
+            });
+
+            if (matchingSessions.length === 0) {
+              console.error(`\x1b[31m❌ Error: No existing sessions found for source '${argv.source}'. Pass '--create <prompt>' to start a new session.\x1b[0m`);
+              process.exit(1);
+            }
+
+            const latestSession = matchingSessions[0].name || matchingSessions[0].id;
+            console.log(`\x1b[90mConnecting to latest session for ${argv.source}: ${latestSession}\x1b[0m`);
+            await repl(latestSession, argv);
+          } catch (err) {
+            console.error(`\x1b[31m❌ Error fetching sessions for source: ${err.message}\x1b[0m`);
+            process.exit(1);
+          }
+          return;
+        }
+
+        await repl(null, argv);
+      }
+    )
+    .command(
+      "approve",
+      "Approve a generated plan for a session",
+      (y) => {
+        return y.option("s", { alias: "session", type: "string", describe: "Session ID to approve plan for" });
+      },
+      async (argv) => {
+        if (!argv.session) {
+          console.error("\x1b[31m❌ Error: `--session` option is required for approve command.\x1b[0m");
           process.exit(1);
         }
-        return;
+        const fullSessionId = argv.session.startsWith("sessions/") ? argv.session : `sessions/${argv.session}`;
+        console.log(`\x1b[36mApproving plan for session:\x1b[0m ${fullSessionId}...`);
+        await apiRequest(`${fullSessionId}:approvePlan`, "POST", {});
+        console.log(`\x1b[32m✔ Plan approved successfully!\x1b[0m`);
       }
-
-      await repl(null, options);
-    });
-
-  program
-    .command("approve")
-    .description("Approve a generated plan for a session")
-    .requiredOption("-s, --session <sessionId>", "Session ID to approve plan for")
-    .action(async (options) => {
-      const fullSessionId = options.session.startsWith("sessions/") ? options.session : `sessions/${options.session}`;
-      console.log(`\x1b[36mApproving plan for session:\x1b[0m ${fullSessionId}...`);
-      await apiRequest(`${fullSessionId}:approvePlan`, "POST", {});
-      console.log(`\x1b[32m✔ Plan approved successfully!\x1b[0m`);
-    });
-
-  program
-    .command("send [message]")
-    .description("Send a message to a session and tail until status is done/completed (supports stdin and @filepath)")
-    .requiredOption("-s, --session <sessionId>", "Session ID to send message to")
-    .option("--git-patch", "Automatically apply received git patches to repository")
-    .action(async (message, options) => {
-      let promptText = message;
-      if (!promptText || promptText === "-") {
-        promptText = await readStdin();
-        promptText = promptText.trim();
+    )
+    .command(
+      "send [message]",
+      "Send a message to a session and tail until status is done/completed (supports stdin and @filepath)",
+      (y) => {
+        return y
+          .positional("message", { type: "string", describe: "Message prompt to send" })
+          .option("s", { alias: "session", type: "string", describe: "Session ID to send message to" })
+          .option("git-patch", { type: "boolean", describe: "Automatically apply received git patches to repository" });
+      },
+      async (argv) => {
+        if (!argv.session) {
+          console.error("\x1b[31m❌ Error: `--session` option is required for send command.\x1b[0m");
+          process.exit(1);
+        }
+        let promptText = argv.message;
+        if (!promptText || promptText === "-") {
+          promptText = await readStdin();
+          promptText = promptText.trim();
+        }
+        if (!promptText) {
+          console.error("\x1b[31m❌ Error: A message or stdin input is required for send command.\x1b[0m");
+          process.exit(1);
+        }
+        try {
+          promptText = expandAtFilepaths(promptText);
+        } catch (err) {
+          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
+          process.exit(1);
+        }
+        await sendMessageAndTail(argv.session, promptText, argv);
       }
-      if (!promptText) {
-        console.error("\x1b[31m❌ Error: A message or stdin input is required for send command.\x1b[0m");
-        process.exit(1);
-      }
-      try {
-        promptText = expandAtFilepaths(promptText);
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
-        process.exit(1);
-      }
-      await sendMessageAndTail(options.session, promptText, options);
-    });
-
-  if (process.argv.length <= 2) {
-    program.outputHelp();
-    process.exit(1);
-  }
-
-  await program.parseAsync(process.argv);
+    )
+    .demandCommand(1, "")
+    .strict()
+    .help()
+    .parse();
 }
 
 main().catch((err) => {

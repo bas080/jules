@@ -18,7 +18,8 @@
     "diff": "^9.0.0",
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
-    "node-fetch-cache": "^5.1.1"
+    "node-fetch-cache": "^5.1.1",
+    "yargs": "^18.2.0"
   },
   "devDependencies": {
     "c8": "^10.0.0",
