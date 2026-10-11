@@ -446,18 +446,8 @@ function printActivity(index, activity, sessionId = null) {
           sessionPatches.set(cleanId, currentPatch);
 
           if (interdiff) {
-            const lines = interdiff.split("\n");
             console.log(`\x1b[1m--- Step Interdiff (Changes in this turn) ---\x1b[0m`);
-            lines.forEach((line) => {
-              if (line.startsWith("+") && !line.startsWith("+++")) {
-                console.log(`\x1b[32m${line}\x1b[0m`);
-              } else if (line.startsWith("-") && !line.startsWith("---")) {
-                console.log(`\x1b[31m${line}\x1b[0m`);
-              } else {
-                console.log(line);
-              }
-            });
-            console.log("");
+            console.log(marked.parse(`\`\`\`diff\n${interdiff}\n\`\`\``));
           }
         } else if (art.bashOutput) {
           const bash = art.bashOutput;
