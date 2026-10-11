@@ -1532,4 +1532,18 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     if (fs.existsSync(queueFile)) fs.unlinkSync(queueFile)
   })
+
+  test('repl displays concise warning on HTTP 429 rate limit error unless DEBUG is set', async () => {
+    mockResponses['GET /sessions/rate429'] = {
+      status: 429,
+      body: { error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } }
+    }
+
+    const { stdout } = await runRepl(['repl', 'rate429'], [
+      { trigger: 'Rate limit reached (HTTP 429)', kill: true }
+    ])
+
+    assert.match(stdout, /Rate limit reached \(HTTP 429\)\. Retrying with backoff\.\.\./)
+    assert.doesNotMatch(stdout, /RESOURCE_EXHAUSTED/)
+  })
 })
