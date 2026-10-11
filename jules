@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import readline from "node:readline";
 import path from "node:path";
+import { execSync, execFileSync } from "node:child_process";
 import { marked } from "marked";
 import TerminalRenderer from "marked-terminal";
 import NodeFetchCache, { FileSystemCache } from "node-fetch-cache";
@@ -53,7 +54,7 @@ function getInterdiff(previousPatch, currentPatch, sessionId) {
   try {
     fs.writeFileSync(prevTmpPath, previousPatch || "", "utf8");
     fs.writeFileSync(currTmpPath, currentPatch || "", "utf8");
-    const output = execSync(`interdiff ${prevTmpPath} ${currTmpPath}`, {
+    const output = execFileSync("interdiff", [prevTmpPath, currTmpPath], {
       encoding: "utf8",
       timeout: 1000,
       stdio: ["ignore", "pipe", "pipe"]
@@ -651,10 +652,11 @@ async function repl(sessionId, options = {}) {
 
   let isBusy = false;
   const messageQueue = [];
+  let promptColorCode = "\x1b[32m";
 
   function getPromptString() {
     const queueSuffix = messageQueue.length > 0 ? ` [${messageQueue.length}]` : "";
-    return `\x1b[32m${basePromptLabel}${queueSuffix} > \x1b[0m`;
+    return `${promptColorCode}${basePromptLabel}${queueSuffix} > \x1b[0m`;
   }
 
   const rl = readline.createInterface({
@@ -768,11 +770,42 @@ async function repl(sessionId, options = {}) {
       console.log("  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content");
       console.log("  \x1b[32m/approve\x1b[0m           Approve the generated plan");
       console.log("  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt");
+      console.log("  \x1b[32m/color <color>\x1b[0m      Change prompt color (green, cyan, blue, yellow, magenta, red, white, default)");
       console.log("  \x1b[32m/queue\x1b[0m              List currently queued messages");
       console.log("  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR");
       console.log("  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
+      rl.prompt();
+      return;
+    }
+
+    if (text.startsWith("/color")) {
+      const parts = text.split(/\s+/).filter(Boolean);
+      const colorArg = parts[1] ? parts[1].toLowerCase() : "";
+
+      const colors = {
+        green: "\x1b[32m",
+        cyan: "\x1b[36m",
+        blue: "\x1b[34m",
+        yellow: "\x1b[33m",
+        magenta: "\x1b[35m",
+        red: "\x1b[31m",
+        white: "\x1b[37m",
+        reset: "\x1b[0m",
+        none: "\x1b[0m",
+        default: "\x1b[32m"
+      };
+
+      if (!colorArg || !colors[colorArg]) {
+        console.error("\x1b[31m❌ Error: Please specify a valid color: green, cyan, blue, yellow, magenta, red, white, default, reset.\x1b[0m");
+        rl.prompt();
+        return;
+      }
+
+      promptColorCode = colors[colorArg];
+      updatePrompt();
+      console.error(`\x1b[32m✔ REPL prompt color set to ${colorArg}.\x1b[0m`);
       rl.prompt();
       return;
     }
