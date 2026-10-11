@@ -17,6 +17,20 @@ marked.setOptions({
   renderer: new TerminalRenderer()
 });
 
+function isColorSupported() {
+  if (process.env.NO_COLOR !== undefined) return false;
+  if (process.argv.includes("--no-color")) return false;
+  return Boolean(process.stdout.isTTY);
+}
+
+function renderMarkdown(mdText) {
+  if (!mdText) return "";
+  if (isColorSupported()) {
+    return marked.parse(mdText);
+  }
+  return mdText.trim();
+}
+
 const API_KEY = process.env.JULES_API_KEY;
 const BASE_URL = process.env.JULES_API_URL || "https://jules.googleapis.com/v1alpha";
 
@@ -173,11 +187,11 @@ async function fetchSources() {
 }
 
 async function listSources() {
-  console.log(`\x1b[36mFetching sources...\x1b[0m\n`);
+  console.error(`\x1b[36mFetching sources...\x1b[0m\n`);
   try {
     const sources = await fetchSources();
     if (sources.length === 0) {
-      console.log("No sources found.");
+      console.error("No sources found.");
       return;
     }
     
@@ -191,8 +205,8 @@ async function listSources() {
       table += `| ${name} | ${repo} | ${branch} |\n`;
     });
 
-    console.log(marked.parse(table));
-    console.log("");
+    console.log(renderMarkdown(table));
+    console.error("");
   } catch (err) {
     console.error(`\x1b[31mError listing sources: ${err.message}\x1b[0m`);
   }
@@ -208,11 +222,11 @@ async function fetchSessions() {
 }
 
 async function listSessions() {
-  console.log(`\x1b[36mFetching sessions...\x1b[0m\n`);
+  console.error(`\x1b[36mFetching sessions...\x1b[0m\n`);
   try {
     const sessions = await fetchSessions();
     if (sessions.length === 0) {
-      console.log("No sessions found.");
+      console.error("No sessions found.");
       return;
     }
     return listSessionsFromList(sessions);
@@ -223,7 +237,7 @@ async function listSessions() {
 
 function listSessionsFromList(sessions) {
     if (sessions.length === 0) {
-      console.log("No sessions found.");
+      console.error("No sessions found.");
       return;
     }
 
@@ -238,7 +252,7 @@ function listSessionsFromList(sessions) {
       table += `| ${id} | ${source} | ${state} | ${created} |\n`;
     });
 
-    console.log(marked.parse(table));
+    console.log(renderMarkdown(table));
 }
 
 async function archiveSession(sessionId) {
@@ -246,11 +260,11 @@ async function archiveSession(sessionId) {
 }
 
 async function cleanup() {
-  console.log(`\x1b[36mCleaning up old sessions (older than 7 days)...\x1b[0m`);
+  console.error(`\x1b[36mCleaning up old sessions (older than 7 days)...\x1b[0m`);
   try {
     const sessions = await fetchSessions();
     if (sessions.length === 0) {
-      console.log("No sessions found to clean up.");
+      console.error("No sessions found to clean up.");
       return;
     }
 
@@ -264,7 +278,7 @@ async function cleanup() {
         const sessionId = s.name || s.id;
         try {
           await archiveSession(sessionId);
-          console.log(`\x1b[32mArchived:\x1b[0m ${sessionId} (${s.createTime})`);
+          console.error(`\x1b[32mArchived:\x1b[0m ${sessionId} (${s.createTime})`);
           archivedCount++;
         } catch (err) {
           console.error(`\x1b[31mFailed to archive ${sessionId}: ${err.message}\x1b[0m`);
@@ -273,9 +287,9 @@ async function cleanup() {
     }
 
     if (archivedCount === 0) {
-      console.log("No sessions older than a week were found.");
+      console.error("No sessions older than a week were found.");
     } else {
-      console.log(`\n\x1b[32mSuccessfully archived ${archivedCount} sessions.\x1b[0m`);
+      console.error(`\n\x1b[32mSuccessfully archived ${archivedCount} sessions.\x1b[0m`);
     }
   } catch (err) {
     console.error(`\x1b[31mError during cleanup: ${err.message}\x1b[0m`);
@@ -300,6 +314,23 @@ async function fetchAllActivities(sessionId) {
   return allActivities;
 }
 
+function hasJulesFinishedWork(activities = [], session = {}) {
+  if (!session) return false;
+  if (session.state === "COMPLETED" || session.state === "AWAITING_USER_INPUT") return true;
+
+  if (Array.isArray(activities)) {
+    for (const act of activities) {
+      if (act.sessionCompleted) return true;
+      if (act.artifacts && Array.isArray(act.artifacts)) {
+        for (const art of act.artifacts) {
+          if (art.changeSet && art.changeSet.gitPatch) return true;
+        }
+      }
+    }
+  }
+  return false;
+}
+
 async function createSession(prompt, sourceId = null) {
   let finalSourceId = sourceId;
 
@@ -322,22 +353,22 @@ async function createSession(prompt, sourceId = null) {
     }
   }
 
-  console.log(`\x1b[36mCreating session...`);
+  console.error(`\x1b[36mCreating session...`);
   const body = { prompt };
   if (finalSourceId) {
     body.id = finalSourceId;
-    console.log(`\x1b[90mSource ID:\x1b[0m ${finalSourceId}`);
+    console.error(`\x1b[90mSource ID:\x1b[0m ${finalSourceId}`);
   }
-  console.log(`\x1b[90mPrompt:\x1b[0m "${prompt}"`);
+  console.error(`\x1b[90mPrompt:\x1b[0m "${prompt}"`);
   
   const session = await apiRequest("sessions", "POST", body);
-  console.log(`\x1b[32mSession created successfully!\x1b[0m ID: ${session.name}`);
+  console.error(`\x1b[32mSession created successfully!\x1b[0m ID: ${session.name}`);
   return session.name;
 }
 
 async function tail(sessionId) {
   const fullSessionId = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
-  console.log(`\x1b[36mTailing session:\x1b[0m ${fullSessionId}...\n`);
+  console.error(`\x1b[36mTailing session:\x1b[0m ${fullSessionId}...\n`);
 
   let lastSeenActivityIndex = -1;
   let lastState = null;
@@ -351,7 +382,7 @@ async function tail(sessionId) {
       const session = await apiRequest(fullSessionId, "GET", null, true);
 
       if (session.state !== lastState) {
-        process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
+        process.stderr.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
         lastState = session.state;
       }
 
@@ -384,7 +415,7 @@ async function tail(sessionId) {
 
 async function sendMessageAndTail(sessionId, message) {
   const fullSessionId = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
-  console.log(`\x1b[36mSending message to session:\x1b[0m ${fullSessionId}...\n`);
+  console.error(`\x1b[36mSending message to session:\x1b[0m ${fullSessionId}...\n`);
 
   let lastSeenActivityIndex = -1;
   let initialUpdateTime = null;
@@ -398,7 +429,7 @@ async function sendMessageAndTail(sessionId, message) {
   }
 
   await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: message });
-  console.log(`\x1b[90m(Message sent... Waiting for Jules to complete...)\x1b[0m\n`);
+  console.error(`\x1b[90m(Message sent... Waiting for Jules to complete...)\x1b[0m\n`);
 
   let lastState = null;
   let lastUpdateTime = initialUpdateTime;
@@ -413,7 +444,7 @@ async function sendMessageAndTail(sessionId, message) {
       const session = await apiRequest(fullSessionId, "GET", null, true);
 
       if (session.state !== lastState) {
-        process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
+        process.stderr.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
         lastState = session.state;
       }
 
@@ -445,7 +476,7 @@ async function sendMessageAndTail(sessionId, message) {
       }
 
       if (session.state === "COMPLETED" || hasCompletedActivity) {
-        console.log(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
+        console.error(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
         process.exit(0);
       }
 
@@ -455,7 +486,7 @@ async function sendMessageAndTail(sessionId, message) {
       }
 
       if (hasStarted && session.state === "AWAITING_USER_INPUT") {
-        console.log(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
+        console.error(`\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n`);
         process.exit(0);
       }
     } catch (err) {
@@ -475,41 +506,42 @@ function printActivity(index, activity, sessionId = null) {
   const originator = activity.originator || "Unknown";
   const color = originator === "agent" ? "\x1b[34m" : originator === "user" ? "\x1b[32m" : "\x1b[35m";
   
-  console.log(`\n\x1b[1m--- Activity ${index} ---\x1b[0m`);
-  console.log(`${time}${color}${originator.toUpperCase()}\x1b[0m`);
+  console.error(`\n\x1b[1m--- Activity ${index} ---\x1b[0m`);
+  console.error(`${time}${color}${originator.toUpperCase()}\x1b[0m`);
 
   if (activity.type) {
-    console.log(`\x1b[90mType: ${activity.type}\x1b[0m`);
+    console.error(`\x1b[90mType: ${activity.type}\x1b[0m`);
   }
 
   // 1. Print Messages
   if (activity.agentMessaged && activity.agentMessaged.agentMessage) {
-    console.log(`\n${marked.parse(activity.agentMessaged.agentMessage)}\n`);
+    console.log(`\n${renderMarkdown(activity.agentMessaged.agentMessage)}\n`);
   } else if (activity.userMessaged && activity.userMessaged.userMessage) {
-    console.log(`\n${marked.parse(activity.userMessaged.userMessage)}\n`);
+    console.log(`\n${renderMarkdown(activity.userMessaged.userMessage)}\n`);
   }
 
   // 2. Print Special Activity Types
   if (activity.planGenerated && activity.planGenerated.plan) {
     const plan = activity.planGenerated.plan;
-    console.log(`\n\x1b[1mPlan Generated (ID: ${plan.id})\x1b[0m`);
+    let planMd = `# Plan Generated (ID: ${plan.id})\n\n`;
     plan.steps.forEach((step, i) => {
-      console.log(`${i + 1}. \x1b[32m${step.title}\x1b[0m: ${step.description}`);
+      planMd += `${i + 1}. **${step.title}**: ${step.description}\n`;
     });
-    console.log(`\n\x1b[90m(This is a plan generated by Jules. Type /approve to approve it.)\x1b[0m\n`);
+    console.log(`\n${renderMarkdown(planMd)}`);
+    console.error(`\x1b[90m(This is a plan generated by Jules. Type /approve to approve it.)\x1b[0m\n`);
   } else if (activity.planApproved) {
-    console.log(`\n\x1b[32m✔ Plan Approved (ID: ${activity.planApproved.planId})\x1b[0m\n`);
+    console.error(`\n\x1b[32m✔ Plan Approved (ID: ${activity.planApproved.planId})\x1b[0m\n`);
   } else if (activity.progressUpdated) {
     const prog = activity.progressUpdated;
     let md = "";
     if (prog.title) md += `# ${prog.title}\n\n`;
     if (prog.description) md += `${prog.description}\n`;
-    if (md) console.log(`\n${marked.parse(md)}\n`);
+    if (md) console.log(`\n${renderMarkdown(md)}\n`);
   } else if (activity.sessionCompleted) {
-    console.log(`\n\x1b[32m🎉 Session Completed Successfully\x1b[0m\n`);
+    console.error(`\n\x1b[32m🎉 Session Completed Successfully\x1b[0m\n`);
   } else if (activity.sessionFailed && activity.sessionFailed.reason) {
-    console.log(`\n\x1b[31m❌ Session Failed\x1b[0m`);
-    console.log(`Reason: ${activity.sessionFailed.reason}\n`);
+    console.error(`\n\x1b[31m❌ Session Failed\x1b[0m`);
+    console.error(`Reason: ${activity.sessionFailed.reason}\n`);
   }
 
   // 3. Print Structured Data
@@ -518,7 +550,7 @@ function printActivity(index, activity, sessionId = null) {
     
     if (key === "artifacts" && Array.isArray(value)) {
       value.forEach((art, i) => {
-        console.log(`\x1b[32mArtifact ${i}:\x1b[0m`);
+        console.error(`\x1b[32mArtifact ${i}:\x1b[0m`);
         if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
           const currentPatch = art.changeSet.gitPatch.unidiffPatch;
           const cleanId = sessionId ? sessionId.replace(/^sessions\//, "") : "session";
@@ -527,8 +559,8 @@ function printActivity(index, activity, sessionId = null) {
           try {
             const tmpPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`);
             fs.writeFileSync(tmpPath, currentPatch, "utf8");
-            console.log(`\x1b[36m📄 Patch saved to:\x1b[0m ${tmpPath}`);
-            console.log(`\x1b[90m💡 Apply to repository:\x1b[0m git apply ${tmpPath}\n`);
+            console.error(`\x1b[36m📄 Patch saved to:\x1b[0m ${tmpPath}`);
+            console.error(`\x1b[90m💡 Apply to repository:\x1b[0m git apply ${tmpPath}\n`);
           } catch (err) {
             console.error(`\x1b[31mFailed to save patch file: ${err.message}\x1b[0m`);
           }
@@ -537,37 +569,40 @@ function printActivity(index, activity, sessionId = null) {
           sessionPatches.set(cleanId, currentPatch);
 
           if (interdiff) {
-            console.log(`\x1b[36mStep Interdiff:\x1b[0m`);
-            console.log(marked.parse(`\`\`\`diff\n${interdiff}\n\`\`\``));
+            console.error(`\x1b[36mStep Interdiff:\x1b[0m`);
+            console.log(renderMarkdown(`\`\`\`diff\n${interdiff}\n\`\`\``));
           }
         } else if (art.bashOutput) {
           const bash = art.bashOutput;
-          console.log(`\x1b[90mCommand:\x1b[0m ${bash.command}`);
-          console.log(`\x1b[90mOutput:\x1b[0m\n${bash.output}`);
-          console.log(`\x1b[90mExit Code:\x1b[0m ${bash.exitCode}`);
+          console.error(`\x1b[90mCommand:\x1b[0m ${bash.command}`);
+          console.error(`\x1b[90mOutput:\x1b[0m\n${bash.output}`);
+          console.error(`\x1b[90mExit Code:\x1b[0m ${bash.exitCode}`);
         } else {
-          console.log(JSON.stringify(art, null, 2));
+          console.error(JSON.stringify(art, null, 2));
         }
       });
     } else if (typeof value === "object" && value !== null) {
-      console.log(`\x1b[32m${key}:\x1b[0m\n${JSON.stringify(value, null, 2)}`);
+      console.error(`\x1b[32m${key}:\x1b[0m\n${JSON.stringify(value, null, 2)}`);
     } else {
-      console.log(`\x1b[32m${key}:\x1b[0m ${value}`);
+      console.error(`\x1b[32m${key}:\x1b[0m ${value}`);
     }
   }
 
   if (activity.id) {
-    console.log(`\x1b[90mID: ${activity.id}\x1b[0m`);
+    console.error(`\x1b[90mID: ${activity.id}\x1b[0m`);
   }
-  console.log(`\x1b[90m--------------------------\x1b[0m`);
+  console.error(`\x1b[90m--------------------------\x1b[0m`);
 }
 
 async function repl(sessionId, options = {}) {
+  let hasPulledForWork = false;
+
   if (options.gitPull) {
     try {
-      console.log(`\x1b[36mRunning 'git pull'...\x1b[0m`);
+      console.error(`\x1b[36mRunning 'git pull'...\x1b[0m`);
       const output = execSync("git pull", { encoding: "utf8" });
-      console.log(output);
+      console.error(output);
+      hasPulledForWork = true;
     } catch (err) {
       console.error(`\x1b[31m❌ Error running 'git pull': ${err.message}\x1b[0m`);
     }
@@ -686,6 +721,17 @@ async function repl(sessionId, options = {}) {
           rl.prompt(true);
         }
         lastUpdateTime = session.updateTime;
+
+        if (options.gitPull && !hasPulledForWork && hasJulesFinishedWork(activities, session)) {
+          hasPulledForWork = true;
+          try {
+            console.error(`\x1b[36mJules is done with work. Running 'git pull'...\x1b[0m`);
+            const output = execSync("git pull", { encoding: "utf8" });
+            console.error(output);
+          } catch (err) {
+            console.error(`\x1b[31m❌ Error running 'git pull': ${err.message}\x1b[0m`);
+          }
+        }
       }
 
       if (session.state === "AWAITING_USER_INPUT" || session.state === "AWAITING_USER_FEEDBACK" || session.state === "COMPLETED") {
@@ -723,9 +769,48 @@ async function repl(sessionId, options = {}) {
       console.log("  \x1b[32m/approve\x1b[0m           Approve the generated plan");
       console.log("  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt");
       console.log("  \x1b[32m/queue\x1b[0m              List currently queued messages");
+      console.log("  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR");
       console.log("  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
+      rl.prompt();
+      return;
+    }
+
+    if (text === "/edit") {
+      const editor = process.env.EDITOR;
+      if (!editor) {
+        console.error("\x1b[31m❌ Error: Cannot use /edit because `$EDITOR` environment variable is not defined.\x1b[0m");
+        console.error("\x1b[90mPlease set `$EDITOR` in your environment (e.g. export EDITOR=vim) to enable editing queued messages in your terminal.\x1b[0m");
+        rl.prompt();
+        return;
+      }
+
+      const tmpFile = path.join(os.tmpdir(), `jules-queue-${Date.now()}.md`);
+      try {
+        const initialContent = messageQueue.join("\n\n---\n\n");
+        fs.writeFileSync(tmpFile, initialContent, "utf8");
+
+        rl.pause();
+        execSync(`${editor} "${tmpFile}"`, { stdio: "inherit" });
+        rl.resume();
+
+        const editedContent = fs.readFileSync(tmpFile, "utf8").trim();
+        messageQueue.length = 0;
+
+        if (editedContent) {
+          const parts = editedContent.split(/\n\s*---\s*\n/).map(s => s.trim()).filter(Boolean);
+          messageQueue.push(...parts);
+          console.error(`\x1b[32m✔ Queue updated via editor (${messageQueue.length} message(s)).\x1b[0m`);
+        } else {
+          console.error(`\x1b[32m✔ File saved empty. Queue cleared.\x1b[0m`);
+        }
+        updatePrompt();
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error editing queue in $EDITOR: ${err.message}\x1b[0m`);
+      } finally {
+        try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile); } catch (e) {}
+      }
       rl.prompt();
       return;
     }
@@ -871,9 +956,10 @@ async function repl(sessionId, options = {}) {
     }
 
     isBusy = true;
+    hasPulledForWork = false;
     try {
       await apiRequest(`${fullSessionId}:sendMessage`, "POST", { prompt: promptToSend });
-      console.log(`\x1b[90m(Message sent... Agent is thinking...)\x1b[0m`);
+      console.error(`\x1b[90m(Message sent... Agent is thinking...)\x1b[0m`);
       
       // Wait a bit for the agent to start processing before triggering a poll
       clearTimeout(tailTimeout);
