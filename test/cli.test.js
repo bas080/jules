@@ -67,6 +67,12 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     hookEvents.push('beforeEach')
     mockRequests = []
     mockResponses = {}
+    const queueDir = path.join(os.homedir(), '.jules-cache', 'queues')
+    if (fs.existsSync(queueDir)) {
+      try {
+        fs.rmSync(queueDir, { recursive: true, force: true })
+      } catch (err) {}
+    }
   })
 
   afterEach(() => {
@@ -914,6 +920,61 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(content, /\+new/)
   })
 
+  test('tail command with --git-patch attempts to apply git patch', async () => {
+    mockResponses['GET /sessions/patch456'] = {
+      status: 200,
+      body: { name: 'sessions/patch456', state: 'ACTIVE', updateTime: '2025-01-01T00:00:01Z' }
+    }
+    mockResponses['GET /sessions/patch456/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'artifactGenerated',
+            originator: 'agent',
+            createTime: '2025-01-01T00:00:01Z',
+            artifacts: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: '--- a/nonexistent_file.txt\n+++ b/nonexistent_file.txt\n@@ -1 +1 @@\n-old\n+new\n'
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'tail', '-s', 'patch456', '--git-patch'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    const onData = data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('applied git patch') || clean.includes('applying git patch')) {
+        proc.kill('SIGKILL')
+      }
+    }
+    proc.stdout.on('data', onData)
+    proc.stderr.on('data', onData)
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Patch saved to:/)
+    assert.match(stdout, /(Automatically applied git patch|Error automatically applying git patch)/)
+  })
+
   test('send command exits with code 1 when state becomes FAILED', async () => {
     mockResponses['GET /sessions/123/activities'] = {
       status: 200,
@@ -1412,5 +1473,63 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.match(stdout, /REPL prompt color set to cyan/)
+  })
+
+  test('repl message queue persists to disk and restores on restart', async () => {
+    const queueFile = path.join(os.homedir(), '.jules-cache', 'queues', 'persisted999.json')
+    if (fs.existsSync(queueFile)) fs.unlinkSync(queueFile)
+
+    mockResponses['GET /sessions/persisted999'] = {
+      status: 200,
+      body: { name: 'sessions/persisted999', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/persisted999/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    // Process 1: queue a message
+    const proc1 = spawn('node', [JULES_BIN, 'repl', '-s', 'persisted999'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    await new Promise(resolve => setTimeout(resolve, 500))
+    proc1.stdin.write('persisted message 1\n')
+    await new Promise(resolve => setTimeout(resolve, 500))
+    proc1.kill('SIGKILL')
+
+    assert.ok(fs.existsSync(queueFile))
+    const queueData = JSON.parse(fs.readFileSync(queueFile, 'utf8'))
+    assert.deepStrictEqual(queueData, ['persisted message 1'])
+
+    // Process 2: start REPL and verify restored queue
+    const proc2 = spawn('node', [JULES_BIN, 'repl', '-s', 'persisted999'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let stdout2 = ''
+    proc2.stdout.on('data', data => { stdout2 += data.toString() })
+    proc2.stderr.on('data', data => { stdout2 += data.toString() })
+
+    await new Promise(resolve => setTimeout(resolve, 500))
+    proc2.stdin.write('/queue\n')
+    await new Promise(resolve => setTimeout(resolve, 300))
+    proc2.kill('SIGKILL')
+
+    const clean2 = stripAnsi(stdout2)
+    assert.match(clean2, /Queued Messages \(1\)/)
+    assert.match(clean2, /persisted message 1/)
+
+    if (fs.existsSync(queueFile)) fs.unlinkSync(queueFile)
   })
 })

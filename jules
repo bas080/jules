@@ -384,7 +384,7 @@ async function createSession(prompt, sourceId = null) {
   return session.name;
 }
 
-async function tail(sessionId) {
+async function tail(sessionId, options = {}) {
   const fullSessionId = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
   console.error(`\x1b[36mTailing session:\x1b[0m ${fullSessionId}...\n`);
 
@@ -411,7 +411,7 @@ async function tail(sessionId) {
         if (activities.length > lastSeenActivityIndex + 1) {
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
-              printActivity(i, activities[i], fullSessionId);
+              printActivity(i, activities[i], fullSessionId, options);
             } catch (err) {
               console.error(`\x1b[31mError printing activity ${i}: ${err.message}\x1b[0m`);
             }
@@ -431,7 +431,7 @@ async function tail(sessionId) {
   }
 }
 
-async function sendMessageAndTail(sessionId, message) {
+async function sendMessageAndTail(sessionId, message, options = {}) {
   const fullSessionId = sessionId.startsWith("sessions/") ? sessionId : `sessions/${sessionId}`;
   console.error(`\x1b[36mSending message to session:\x1b[0m ${fullSessionId}...\n`);
 
@@ -479,7 +479,7 @@ async function sendMessageAndTail(sessionId, message) {
             if (act.sessionCompleted) hasCompletedActivity = true;
             if (act.sessionFailed) hasFailedActivity = true;
             try {
-              printActivity(i, act, fullSessionId);
+              printActivity(i, act, fullSessionId, options);
             } catch (err) {
               console.error(`\x1b[31mError printing activity ${i}: ${err.message}\x1b[0m`);
             }
@@ -518,7 +518,7 @@ async function sendMessageAndTail(sessionId, message) {
   }
 }
 
-function printActivity(index, activity, sessionId = null) {
+function printActivity(index, activity, sessionId = null, options = {}) {
   log(`Printing Activity ${index}: %O`, activity);
   const time = activity.createTime ? `\x1b[90m[${activity.createTime}]\x1b[0m ` : "";
   const originator = activity.originator || "Unknown";
@@ -579,6 +579,15 @@ function printActivity(index, activity, sessionId = null) {
             fs.writeFileSync(tmpPath, currentPatch, "utf8");
             console.error(`\x1b[36m📄 Patch saved to:\x1b[0m ${tmpPath}`);
             console.error(`\x1b[90m💡 Apply to repository:\x1b[0m git apply ${tmpPath}\n`);
+
+            if (options && options.gitPatch) {
+              try {
+                execFileSync("git", ["apply", tmpPath], { cwd: process.cwd(), encoding: "utf8" });
+                console.error(`\x1b[32m✔ Automatically applied git patch to repository:\x1b[0m git apply ${tmpPath}\n`);
+              } catch (applyErr) {
+                console.error(`\x1b[31m❌ Error automatically applying git patch: ${applyErr.message}\x1b[0m\n`);
+              }
+            }
           } catch (err) {
             console.error(`\x1b[31mFailed to save patch file: ${err.message}\x1b[0m`);
           }
@@ -667,8 +676,48 @@ async function repl(sessionId, options = {}) {
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`);
   console.log(`\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n`);
 
+  function getQueueFilePath(sessionId) {
+    const cleanId = sessionId.replace(/^sessions\//, "");
+    const queueDir = path.join(os.homedir(), ".jules-cache", "queues");
+    if (!fs.existsSync(queueDir)) {
+      fs.mkdirSync(queueDir, { recursive: true });
+    }
+    return path.join(queueDir, `${cleanId}.json`);
+  }
+
+  function saveQueue(sessionId, queue) {
+    try {
+      const queueFile = getQueueFilePath(sessionId);
+      if (queue.length === 0) {
+        if (fs.existsSync(queueFile)) {
+          fs.unlinkSync(queueFile);
+        }
+      } else {
+        fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2), "utf8");
+      }
+    } catch (err) {
+      log(`Failed to save queue for ${sessionId}: ${err.message}`);
+    }
+  }
+
+  function loadQueue(sessionId) {
+    try {
+      const queueFile = getQueueFilePath(sessionId);
+      if (fs.existsSync(queueFile)) {
+        const data = fs.readFileSync(queueFile, "utf8");
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (err) {
+      log(`Failed to load queue for ${sessionId}: ${err.message}`);
+    }
+    return [];
+  }
+
   let isBusy = false;
-  const messageQueue = [];
+  const messageQueue = loadQueue(fullSessionId);
   let promptColorCode = "\x1b[32m";
 
   function getPromptString() {
@@ -696,6 +745,7 @@ async function repl(sessionId, options = {}) {
     if (messageQueue.length > 0 && !isBusy) {
       const combinedPayload = messageQueue.join("\n\n---\n\n");
       messageQueue.length = 0;
+      saveQueue(fullSessionId, messageQueue);
       updatePrompt();
       console.log(`\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m`);
       isBusy = true;
@@ -731,7 +781,7 @@ async function repl(sessionId, options = {}) {
         if (activities.length > lastSeenActivityIndex + 1) {
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
-              printActivity(i, activities[i], fullSessionId);
+              printActivity(i, activities[i], fullSessionId, options);
             } catch (err) {
               console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`);
             }
@@ -851,8 +901,10 @@ async function repl(sessionId, options = {}) {
         if (editedContent) {
           const parts = editedContent.split(/\n\s*---\s*\n/).map(s => s.trim()).filter(Boolean);
           messageQueue.push(...parts);
+          saveQueue(fullSessionId, messageQueue);
           console.error(`\x1b[32m✔ Queue updated via editor (${messageQueue.length} message(s)).\x1b[0m`);
         } else {
+          saveQueue(fullSessionId, messageQueue);
           console.error(`\x1b[32m✔ File saved empty. Queue cleared.\x1b[0m`);
         }
         updatePrompt();
@@ -901,6 +953,7 @@ async function repl(sessionId, options = {}) {
       }
       const combinedPayload = messageQueue.join("\n\n---\n\n");
       messageQueue.length = 0;
+      saveQueue(fullSessionId, messageQueue);
       updatePrompt();
       isBusy = true;
       try {
@@ -950,6 +1003,7 @@ async function repl(sessionId, options = {}) {
         const formatted = readAndFormatLocalFile(filepath);
         if (isBusy) {
           messageQueue.push(formatted.trim());
+          saveQueue(fullSessionId, messageQueue);
           updatePrompt();
           console.log(`\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /flush to send immediately)\x1b[0m`);
         } else {
@@ -984,6 +1038,7 @@ async function repl(sessionId, options = {}) {
 
     if (isBusy || messageQueue.length > 0) {
       messageQueue.push(promptToSend);
+      saveQueue(fullSessionId, messageQueue);
       updatePrompt();
       console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
       rl.prompt();
@@ -996,6 +1051,7 @@ async function repl(sessionId, options = {}) {
       if (session.state === "IN_PROGRESS" || session.state === "ACTIVE") {
         isBusy = true;
         messageQueue.push(promptToSend);
+        saveQueue(fullSessionId, messageQueue);
         updatePrompt();
         console.log(`\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m`);
         rl.prompt();
@@ -1084,6 +1140,7 @@ async function main() {
     .command("tail [sessionId]")
     .description("Live-stream session activities (defaults to latest)")
     .option("-s, --session <sessionId>", "Session ID to tail")
+    .option("--git-patch", "Automatically apply received git patches to repository")
     .action(async (sessionId, options) => {
       let targetSessionId = options.session || sessionId;
       if (!targetSessionId) {
@@ -1100,7 +1157,7 @@ async function main() {
           process.exit(1);
         }
       }
-      await tail(targetSessionId);
+      await tail(targetSessionId, options);
     });
 
   program
@@ -1111,6 +1168,7 @@ async function main() {
     .option("--source <sourceId>", "Link or filter by a specific code source")
     .option("--name <name>", "Set a custom display name/label for the REPL prompt")
     .option("--git-pull", "Automatically run 'git pull' before starting the REPL")
+    .option("--git-patch", "Automatically apply received git patches to repository")
     .action(async (sessionIdOrPrompt, options) => {
       if (options.create) {
         if (options.session) {
@@ -1195,6 +1253,7 @@ async function main() {
     .command("send [message]")
     .description("Send a message to a session and tail until status is done/completed (supports stdin and @filepath)")
     .requiredOption("-s, --session <sessionId>", "Session ID to send message to")
+    .option("--git-patch", "Automatically apply received git patches to repository")
     .action(async (message, options) => {
       let promptText = message;
       if (!promptText || promptText === "-") {
@@ -1211,7 +1270,7 @@ async function main() {
         console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`);
         process.exit(1);
       }
-      await sendMessageAndTail(options.session, promptText);
+      await sendMessageAndTail(options.session, promptText, options);
     });
 
   if (process.argv.length <= 2) {
