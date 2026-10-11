@@ -22,6 +22,22 @@ export async function runCli (argv = process.argv) {
   const parser = yargs(args)
     .scriptName('jules')
     .usage('Jules CLI - AI Session Manager\n\nUsage: $0 <command> [options]')
+    .option('api-key', {
+      type: 'string',
+      describe: 'API key for Google Jules API authentication (env: JULES_API_KEY)'
+    })
+    .option('api-url', {
+      type: 'string',
+      describe: 'Google Jules API endpoint URL (env: JULES_API_URL)'
+    })
+    .option('disable-cache', {
+      type: 'boolean',
+      describe: 'Bypass local response caching in ~/.jules-cache (env: JULES_DISABLE_CACHE)'
+    })
+    .option('poll-interval', {
+      type: 'number',
+      describe: 'Background polling delay in milliseconds (env: JULES_POLL_INTERVAL)'
+    })
 
   registerSessionsCommand(parser)
   registerSourcesCommand(parser)
