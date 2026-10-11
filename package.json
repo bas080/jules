@@ -8,12 +8,13 @@
   "main": "index.js",
   "scripts": {
     "test": "node --test --test-timeout=60000",
+    "test:unit": "node --test test/unit/**/*.test.*",
+    "test:integration": "node --test test/integration/**/*.test.*",
     "lint": "standard",
     "coverage": "c8 node --test --test-timeout=60000"
   },
   "dependencies": {
     "@google/jules": "^0.1.42",
-    "commander": "^15.0.0",
     "debug": "^4.4.3",
     "diff": "^9.0.0",
     "marked": "^15.0.12",

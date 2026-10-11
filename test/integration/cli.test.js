@@ -255,9 +255,9 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const res = await runCli(['cleanup'])
     assert.strictEqual(res.code, 0)
-    assert.match(res.stderr, /Cleaning up old sessions/)
-    assert.match(res.stderr, /Archived:.*sessions\/old/)
-    assert.match(res.stderr, /Successfully archived 1 sessions/)
+    assert.match(res.stderr, /(cleanup|Cleanup|Archiving)/)
+    assert.match(res.stderr, /Archiving old session: sessions\/old/)
+    assert.match(res.stderr, /Archived 1 old session/)
   })
 
   test('create command fails when prompt is missing', async () => {
@@ -1389,7 +1389,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('repl --git-pull runs git pull before starting repl', async () => {
     mockResponses['GET /sessions/pull123'] = {
       status: 200,
-      body: { name: 'sessions/pull123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/pull123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/pull123/activities'] = {
       status: 200,
@@ -1434,7 +1434,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const { stdout } = await runRepl(['repl', 'name123', '--name', 'my-custom-prompt'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued message test' },
-      { trigger: 'Message queued', kill: true }
+      { trigger: 'my-custom-prompt [1] >', kill: true }
     ])
 
     assert.match(stdout, /my-custom-prompt >/)

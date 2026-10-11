@@ -4,7 +4,7 @@ import { execSync, execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { computeInterdiff } from '../interdiff.mjs'
+import { computeInterdiff } from '../../src/interdiff.mjs'
 
 function isSystemInterdiffAvailable () {
   try {
