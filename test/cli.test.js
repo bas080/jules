@@ -308,7 +308,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'test prompt')
-    assert.strictEqual(postReq.body.id, 'sources/github/owner/repo')
+    assert.strictEqual(postReq.body.source, 'sources/github/owner/repo')
   })
 
   test('tail command defaults to latest session when no ID provided', async () => {
@@ -721,7 +721,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'initial repl prompt')
-    assert.strictEqual(postReq.body.id, 'sources/github/owner/repo')
+    assert.strictEqual(postReq.body.source, 'sources/github/owner/repo')
   })
 
   test('send command fails when --session flag is missing', async () => {
@@ -1371,7 +1371,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const { stdout } = await runRepl(['repl', 'queue123'], [
       { trigger: 'State: IN_PROGRESS', input: 'first queued item' },
       { trigger: 'Message queued', input: '/queue' },
-      { trigger: 'Queued Messages (1):', kill: true }
+      { trigger: '1. first queued item', kill: true }
     ])
 
     assert.match(stdout, /Queued Messages \(1\):/)
