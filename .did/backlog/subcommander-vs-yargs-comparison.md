@@ -1,18 +1,42 @@
-# Feature: Subcommander vs. Yargs Framework Evaluation
+# Specification: Yargs CLI & Slash-Command Architecture
 
 ## Overview
-Evaluation and comparison between `subcommander` and `yargs` for potential CLI framework migration or expansion.
+Framework selection and slash-command parsing research for `jules`.
 
-## Comparison Summary
+## Decision Summary
+- **Selected Framework**: `yargs` (selected over `subcommander` and `commander`).
+- **Explicit Command Registration**: `yargs.commandDir()` is explicitly **rejected**; all commands must be defined explicitly and imperatively in code for clarity and maintainability.
 
-| Metric | Subcommander | Yargs | Commander (Current) |
-| :--- | :--- | :--- | :--- |
-| **Primary Focus** | Minimal nested subcommands | Comprehensive CLI framework | Standard Node.js CLI framework |
-| **Maintenance** | Low activity | High activity | High activity |
-| **Ecosystem & Types** | Minimal | Rich & `@types/yargs` | Rich & `@types/commander` |
-| **Parsing & Rules** | Basic flags | Rich validation, choices, coercion | Flexible option builder & hooks |
+## Research: Parsing Slash Commands with Yargs (`/command <args>...`)
 
-## Questions for `@bas080`
-1. `@bas080`: Are there specific limitations in `commander` that prompt us to consider `yargs` or `subcommander` (e.g. nested command directory auto-loading, middleware pipelines, or completion generation)?
-2. `@bas080`: If we migrate, do you prefer a declarative command directory structure (like `yargs.commandDir()`) or maintaining explicit imperatively defined command objects?
-3. `@bas080`: Is zero-dependency footprint a hard requirement, or is adding `yargs` acceptable for richer argument coercion and validation?
+### Feasibility: **Yes, Fully Supported**
+Yargs can parse slash-prefixed commands (`/upload`, `/color`, `/approve`, `/rename`, `/edit`, `/flush`, `/queue`, `/help`) along with positional arguments and flags.
+
+### Technical Implementation Pattern:
+1. **Command Signatures**:
+   Yargs permits leading slashes in command names:
+   ```javascript
+   yargs
+     .command('/color <color>', 'Change prompt color', (yargs) => {
+       yargs.positional('color', { type: 'string', choices: ['green', 'cyan', 'blue', 'yellow', 'magenta', 'red', 'white', 'default'] })
+     }, (argv) => {
+       setPromptColor(argv.color);
+     })
+     .command('/upload <filepath>', 'Upload local text file', (yargs) => {
+       yargs.positional('filepath', { type: 'string', demandOption: true })
+     }, (argv) => {
+       uploadFile(argv.filepath);
+     });
+   ```
+
+2. **Parsing Strings**:
+   Passing REPL line input directly to `yargs.parse(line)` or `yargs.parse(yargs-parser(line))` returns parsed `argv` with positional arguments and options:
+   ```javascript
+   const argv = yargs().parse('/upload --file foo.txt bar.js');
+   // argv._ => ['/upload', 'bar.js']
+   // argv.file => 'foo.txt'
+   ```
+
+3. **Advantages**:
+   - Eliminates custom string splitting and manual argument validation for REPL slash commands.
+   - Provides consistent option/flag parsing (`--flag`, `-f`, `--key=value`) across both CLI and REPL shells.
