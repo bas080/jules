@@ -538,11 +538,11 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
 
-    assert.match(stdout, /Warning: Specifying `--source` is not necessary when passing a session ID/)
+    assert.match(stdout, /Warning: Specifying `--source` is not necessary when passing an explicit session ID/)
     assert.match(stdout, /Jules REPL started for session: sessions\/123/)
   })
 
-  test('repl --source implicitly creates session and starts REPL', async () => {
+  test('repl --source connects to existing latest session for source', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
@@ -554,15 +554,19 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
         ]
       }
     }
-    mockResponses['POST /sessions'] = {
+    mockResponses['GET /sessions'] = {
       status: 200,
-      body: { name: 'sessions/sourceCreated123' }
+      body: {
+        sessions: [
+          { name: 'sessions/sourceExist123', source: 'sources/github/owner/repo', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
+        ]
+      }
     }
-    mockResponses['GET /sessions/sourceCreated123'] = {
+    mockResponses['GET /sessions/sourceExist123'] = {
       status: 200,
-      body: { name: 'sessions/sourceCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/sourceExist123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
     }
-    mockResponses['GET /sessions/sourceCreated123/activities'] = {
+    mockResponses['GET /sessions/sourceExist123/activities'] = {
       status: 200,
       body: { activities: [] }
     }
@@ -588,13 +592,40 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     await new Promise(resolve => proc.on('close', resolve))
     const stdout = stripAnsi(rawStdout)
 
-    assert.match(stdout, /Creating session/)
-    assert.match(stdout, /Session created successfully!/)
-    assert.match(stdout, /Jules REPL started for session: sessions\/sourceCreated123/)
+    assert.match(stdout, /Connecting to latest session for owner\/repo: sessions\/sourceExist123/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/sourceExist123/)
+  })
+
+  test('repl --source fails if no session exists without --create', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: {
+        sources: [
+          {
+            name: 'sources/github/owner/repo',
+            githubRepo: { owner: 'owner', repo: 'repo' }
+          }
+        ]
+      }
+    }
+    mockResponses['GET /sessions'] = {
+      status: 200,
+      body: { sessions: [] }
+    }
+
+    const res = await runCli(['repl', '--source', 'owner/repo'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /No existing sessions found for source 'owner\/repo'\. Pass '--create <prompt>' to start a new session\./)
+  })
+
+  test('repl --create without prompt fails', async () => {
+    const res = await runCli(['repl', '--create'])
+    assert.strictEqual(res.code, 1)
+    assert.match(res.stderr, /A prompt argument is required when using `--create`/)
   })
 
   test('repl --create with --session fails', async () => {
-    const res = await runCli(['repl', '--create', '-s', '123'])
+    const res = await runCli(['repl', '--create', 'test prompt', '-s', '123'])
     assert.strictEqual(res.code, 1)
     assert.match(res.stderr, /Cannot specify `--session` option when creating a new session/)
   })
