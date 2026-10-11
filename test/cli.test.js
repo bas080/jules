@@ -73,6 +73,12 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
         fs.rmSync(queueDir, { recursive: true, force: true })
       } catch (err) {}
     }
+    const stateDir = path.join(os.homedir(), '.jules-cache', 'sessions')
+    if (fs.existsSync(stateDir)) {
+      try {
+        fs.rmSync(stateDir, { recursive: true, force: true })
+      } catch (err) {}
+    }
   })
 
   afterEach(() => {
@@ -1492,7 +1498,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   })
 
   test('repl message queue persists to disk and restores on restart', async () => {
-    const queueFile = path.join(os.homedir(), '.jules-cache', 'queues', 'persisted999.json')
+    const queueFile = path.join(os.homedir(), '.jules-cache', 'sessions', 'persisted999.json')
     if (fs.existsSync(queueFile)) fs.unlinkSync(queueFile)
 
     mockResponses['GET /sessions/persisted999'] = {
@@ -1520,8 +1526,8 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     proc1.kill('SIGKILL')
 
     assert.ok(fs.existsSync(queueFile))
-    const queueData = JSON.parse(fs.readFileSync(queueFile, 'utf8'))
-    assert.deepStrictEqual(queueData, ['persisted message 1'])
+    const stateData = JSON.parse(fs.readFileSync(queueFile, 'utf8'))
+    assert.deepStrictEqual(stateData.queue, ['persisted message 1'])
 
     // Process 2: start REPL and verify restored queue
     const proc2 = spawn('node', [JULES_BIN, 'repl', '-s', 'persisted999'], {
@@ -1579,6 +1585,62 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.ok(stdout.includes('clear123 >'))
+  })
+
+  test('repl /web command displays opening web URL message', async () => {
+    mockResponses['GET /sessions/web123'] = {
+      status: 200,
+      body: { name: 'sessions/web123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/web123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', 'web123'], [
+      { trigger: 'Jules REPL started for session', input: '/web' },
+      { trigger: 'Opening session in browser: https://jules.google.com/session/web123', kill: true }
+    ])
+
+    assert.match(stdout, /Opening session in browser: https:\/\/jules\.google\.com\/session\/web123/)
+  })
+
+  test('repl persists prompt name and color across process restart', async () => {
+    const sessionStateFile = path.join(os.homedir(), '.jules-cache', 'sessions', 'persistedstate123.json')
+    if (fs.existsSync(sessionStateFile)) fs.unlinkSync(sessionStateFile)
+
+    mockResponses['GET /sessions/persistedstate123'] = {
+      status: 200,
+      body: { name: 'sessions/persistedstate123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/persistedstate123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    // Process 1: set name and color
+    const { stdout: stdout1 } = await runRepl(['repl', 'persistedstate123'], [
+      { trigger: 'Jules REPL started for session', input: '/rename my-custom-session' },
+      { trigger: 'REPL prompt renamed to: my-custom-session', input: '/color cyan' },
+      { trigger: 'REPL prompt color set to cyan', kill: true }
+    ])
+
+    assert.match(stdout1, /REPL prompt renamed to: my-custom-session/)
+    assert.match(stdout1, /REPL prompt color set to cyan/)
+    assert.ok(fs.existsSync(sessionStateFile))
+
+    const stateData = JSON.parse(fs.readFileSync(sessionStateFile, 'utf8'))
+    assert.strictEqual(stateData.name, 'my-custom-session')
+    assert.strictEqual(stateData.color, 'cyan')
+
+    // Process 2: start REPL again and verify custom prompt label restored
+    const { stdout: stdout2 } = await runRepl(['repl', 'persistedstate123'], [
+      { trigger: 'my-custom-session >', kill: true }
+    ])
+
+    assert.match(stdout2, /my-custom-session >/)
+
+    if (fs.existsSync(sessionStateFile)) fs.unlinkSync(sessionStateFile)
   })
 
   test('repl skips past activity history by default unless --history is passed', async () => {

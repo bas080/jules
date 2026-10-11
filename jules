@@ -407,6 +407,21 @@ async function createSession(prompt, sourceId = null) {
   return session.name;
 }
 
+function openUrlInBrowser(url) {
+  const platform = process.platform;
+  try {
+    if (platform === "darwin") {
+      execSync(`open "${url}"`);
+    } else if (platform === "win32") {
+      execSync(`start "" "${url}"`);
+    } else {
+      execSync(`xdg-open "${url}"`);
+    }
+  } catch (err) {
+    log(`Failed to open URL in browser automatically: ${err.message}`);
+  }
+}
+
 function isRateLimitError(err) {
   return (err && err.status === 429) || (err && err.message && err.message.includes("429"));
 }
@@ -698,11 +713,59 @@ async function repl(sessionId, options = {}) {
   }
   const fullSessionId = targetSessionId.startsWith("sessions/") ? targetSessionId : `sessions/${targetSessionId}`;
   const shortSessionId = fullSessionId.replace(/^sessions\//, "");
-  let basePromptLabel = shortSessionId;
+
+  function getSessionStateFilePath(sessionId) {
+    const cleanId = sessionId.replace(/^sessions\//, "");
+    const stateDir = path.join(os.homedir(), ".jules-cache", "sessions");
+    if (!fs.existsSync(stateDir)) {
+      fs.mkdirSync(stateDir, { recursive: true });
+    }
+    return path.join(stateDir, `${cleanId}.json`);
+  }
+
+  function saveSessionState(sessionId, stateObj) {
+    try {
+      const stateFile = getSessionStateFilePath(sessionId);
+      if (!stateObj.name && !stateObj.color && (!stateObj.queue || stateObj.queue.length === 0)) {
+        if (fs.existsSync(stateFile)) {
+          fs.unlinkSync(stateFile);
+        }
+      } else {
+        fs.writeFileSync(stateFile, JSON.stringify(stateObj, null, 2), "utf8");
+      }
+    } catch (err) {
+      log(`Failed to save session state for ${sessionId}: ${err.message}`);
+    }
+  }
+
+  function loadSessionState(sessionId) {
+    try {
+      const stateFile = getSessionStateFilePath(sessionId);
+      if (fs.existsSync(stateFile)) {
+        const data = fs.readFileSync(stateFile, "utf8");
+        const parsed = JSON.parse(data);
+        if (parsed && typeof parsed === "object") {
+          return {
+            name: parsed.name || null,
+            color: parsed.color || null,
+            queue: Array.isArray(parsed.queue) ? parsed.queue : []
+          };
+        }
+      }
+    } catch (err) {
+      log(`Failed to load session state for ${sessionId}: ${err.message}`);
+    }
+    return { name: null, color: null, queue: [] };
+  }
+
+  const sessionState = loadSessionState(fullSessionId);
+  let basePromptLabel = sessionState.name || shortSessionId;
 
   if (options.name) {
     basePromptLabel = options.name;
-  } else {
+    sessionState.name = options.name;
+    saveSessionState(fullSessionId, sessionState);
+  } else if (!sessionState.name) {
     try {
       const sessionInfo = await apiRequest(fullSessionId, "GET", null, true);
       let source = sessionInfo.source || sessionInfo.sourceId;
@@ -719,52 +782,31 @@ async function repl(sessionId, options = {}) {
     }
   }
 
+  const promptColors = {
+    green: "\x1b[32m",
+    cyan: "\x1b[36m",
+    blue: "\x1b[34m",
+    yellow: "\x1b[33m",
+    magenta: "\x1b[35m",
+    red: "\x1b[31m",
+    white: "\x1b[37m",
+    reset: "\x1b[0m",
+    none: "\x1b[0m",
+    default: "\x1b[32m"
+  };
+
+  let promptColorCode = promptColors[sessionState.color] || "\x1b[32m";
+
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`);
   console.log(`\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n`);
 
-  function getQueueFilePath(sessionId) {
-    const cleanId = sessionId.replace(/^sessions\//, "");
-    const queueDir = path.join(os.homedir(), ".jules-cache", "queues");
-    if (!fs.existsSync(queueDir)) {
-      fs.mkdirSync(queueDir, { recursive: true });
-    }
-    return path.join(queueDir, `${cleanId}.json`);
-  }
-
   function saveQueue(sessionId, queue) {
-    try {
-      const queueFile = getQueueFilePath(sessionId);
-      if (queue.length === 0) {
-        if (fs.existsSync(queueFile)) {
-          fs.unlinkSync(queueFile);
-        }
-      } else {
-        fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2), "utf8");
-      }
-    } catch (err) {
-      log(`Failed to save queue for ${sessionId}: ${err.message}`);
-    }
-  }
-
-  function loadQueue(sessionId) {
-    try {
-      const queueFile = getQueueFilePath(sessionId);
-      if (fs.existsSync(queueFile)) {
-        const data = fs.readFileSync(queueFile, "utf8");
-        const parsed = JSON.parse(data);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch (err) {
-      log(`Failed to load queue for ${sessionId}: ${err.message}`);
-    }
-    return [];
+    sessionState.queue = queue;
+    saveSessionState(sessionId, sessionState);
   }
 
   let isBusy = false;
-  const messageQueue = loadQueue(fullSessionId);
-  let promptColorCode = "\x1b[32m";
+  const messageQueue = sessionState.queue;
 
   function getPromptString() {
     const queueSuffix = messageQueue.length > 0 ? ` [${messageQueue.length}]` : "";
@@ -881,6 +923,15 @@ async function repl(sessionId, options = {}) {
       return;
     }
 
+    if (text === "/web" || text.startsWith("/web")) {
+      const cleanId = fullSessionId.replace(/^sessions\//, "");
+      const webUrl = `https://jules.google.com/session/${cleanId}`;
+      console.log(`\x1b[36m🌐 Opening session in browser:\x1b[0m ${webUrl}\n`);
+      openUrlInBrowser(webUrl);
+      rl.prompt();
+      return;
+    }
+
     if (text === "/clear" || text.startsWith("/clear")) {
       console.clear();
       rl.prompt();
@@ -897,6 +948,7 @@ async function repl(sessionId, options = {}) {
       console.log("  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR");
       console.log("  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately");
       console.log("  \x1b[32m/clear\x1b[0m              Clear terminal screen");
+      console.log("  \x1b[32m/web\x1b[0m                Open session URL in web browser");
       console.log("  \x1b[32m/help\x1b[0m               Display this help message");
       console.log("  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n");
       rl.prompt();
@@ -927,6 +979,8 @@ async function repl(sessionId, options = {}) {
       }
 
       promptColorCode = colors[colorArg];
+      sessionState.color = colorArg;
+      saveSessionState(fullSessionId, sessionState);
       updatePrompt();
       console.error(`\x1b[32m✔ REPL prompt color set to ${colorArg}.\x1b[0m`);
       rl.prompt();
@@ -995,6 +1049,8 @@ async function repl(sessionId, options = {}) {
         return;
       }
       basePromptLabel = newName;
+      sessionState.name = newName;
+      saveSessionState(fullSessionId, sessionState);
       updatePrompt();
       console.log(`\x1b[32m✔ REPL prompt renamed to: ${newName}\x1b[0m`);
       rl.prompt();
