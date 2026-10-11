@@ -530,7 +530,17 @@ function printActivity(index, activity, sessionId = null) {
   console.log(`\x1b[90m--------------------------\x1b[0m`);
 }
 
-async function repl(sessionId) {
+async function repl(sessionId, options = {}) {
+  if (options.gitPull) {
+    try {
+      console.log(`\x1b[36mRunning 'git pull'...\x1b[0m`);
+      const output = execSync("git pull", { encoding: "utf8" });
+      console.log(output);
+    } catch (err) {
+      console.error(`\x1b[31m❌ Error running 'git pull': ${err.message}\x1b[0m`);
+    }
+  }
+
   let targetSessionId = sessionId;
   if (!targetSessionId) {
     try {
@@ -605,7 +615,7 @@ async function repl(sessionId) {
       if (session.state !== lastState) {
         process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`);
         lastState = session.state;
-        if (session.state === "AWAITING_USER_INPUT" || session.state === "COMPLETED") {
+        if (session.state === "AWAITING_USER_INPUT" || session.state === "AWAITING_USER_FEEDBACK" || session.state === "COMPLETED" || session.state === "FAILED" || session.state === "CANCELLED") {
           isBusy = false;
         } else if (session.state === "IN_PROGRESS" || session.state === "ACTIVE") {
           isBusy = true;
@@ -631,7 +641,7 @@ async function repl(sessionId) {
         lastUpdateTime = session.updateTime;
       }
 
-      if (session.state === "AWAITING_USER_INPUT") {
+      if (session.state === "AWAITING_USER_INPUT" || session.state === "AWAITING_USER_FEEDBACK") {
         isBusy = false;
         await flushQueue();
       }
@@ -880,6 +890,7 @@ async function main() {
     .option("-s, --session <sessionId>", "Session ID for REPL")
     .option("-c, --create", "Create a new session (requires a prompt argument)")
     .option("--source <sourceId>", "Link or filter by a specific code source")
+    .option("--git-pull", "Automatically run 'git pull' before starting the REPL")
     .action(async (sessionIdOrPrompt, options) => {
       if (options.create) {
         if (options.session) {
@@ -898,7 +909,7 @@ async function main() {
           process.exit(1);
         }
         const newSessionId = await createSession(initialPrompt, options.source);
-        await repl(newSessionId);
+        await repl(newSessionId, options);
         return;
       }
 
@@ -908,7 +919,7 @@ async function main() {
         if (options.source) {
           console.log("\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing an explicit session ID.\x1b[0m");
         }
-        await repl(explicitSessionId);
+        await repl(explicitSessionId, options);
         return;
       }
 
@@ -938,7 +949,7 @@ async function main() {
 
           const latestSession = matchingSessions[0].name || matchingSessions[0].id;
           console.log(`\x1b[90mConnecting to latest session for ${options.source}: ${latestSession}\x1b[0m`);
-          await repl(latestSession);
+          await repl(latestSession, options);
         } catch (err) {
           console.error(`\x1b[31m❌ Error fetching sessions for source: ${err.message}\x1b[0m`);
           process.exit(1);
@@ -946,7 +957,7 @@ async function main() {
         return;
       }
 
-      await repl();
+      await repl(null, options);
     });
 
   program

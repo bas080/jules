@@ -1386,4 +1386,81 @@ describe('Jules CLI Tests', { timeout: 30000 }, () => {
     assert.ok(sendMsgReq)
     assert.match(sendMsgReq.body.prompt, /queued msg 1\n\n---\n\nqueued msg 2/)
   })
+
+  test('repl sends message immediately when state is AWAITING_USER_FEEDBACK', async () => {
+    mockResponses['GET /sessions/feedback123'] = {
+      status: 200,
+      body: { name: 'sessions/feedback123', state: 'AWAITING_USER_FEEDBACK', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/feedback123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/feedback123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'feedback123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let step = 0
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes('State: AWAITING_USER_FEEDBACK') && step === 0) {
+        step = 1
+        proc.stdin.write('feedback response\n')
+      } else if (clean.includes('Message sent... Agent is thinking') && step === 1) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/feedback123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'feedback response')
+  })
+
+  test('repl --git-pull runs git pull before starting repl', async () => {
+    mockResponses['GET /sessions/pull123'] = {
+      status: 200,
+      body: { name: 'sessions/pull123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/pull123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const proc = spawn('node', [JULES_BIN, 'repl', 'pull123', '--git-pull'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true'
+      }
+    })
+
+    let rawStdout = ''
+    proc.stdout.on('data', data => {
+      rawStdout += data.toString()
+      const clean = stripAnsi(rawStdout)
+      if (clean.includes("Running 'git pull'") || clean.includes('Jules REPL started for session')) {
+        proc.kill('SIGKILL')
+      }
+    })
+
+    await new Promise(resolve => proc.on('close', resolve))
+    const stdout = stripAnsi(rawStdout)
+
+    assert.match(stdout, /Running 'git pull'/)
+  })
 })
