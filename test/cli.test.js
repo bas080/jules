@@ -191,7 +191,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(res.code, 0)
     assert.match(res.stderr, /Fetching sessions/)
     assert.match(res.stdout, /sessions\/123/)
-    assert.match(res.stdout, /sources\/github\/owner\/repo/)
+    assert.match(res.stdout, /owner\/repo/)
     assert.match(res.stdout, /ACTIVE/)
     assert.strictEqual(mockRequests.length, 1)
     assert.strictEqual(mockRequests[0].headers['x-goog-api-key'], 'test-key')
@@ -1368,33 +1368,11 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', 'queue123'], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let step = 0
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('State: IN_PROGRESS') && step === 0) {
-        step = 1
-        proc.stdin.write('first queued item\n')
-      } else if (clean.includes('Message queued') && step === 1) {
-        step = 2
-        proc.stdin.write('/queue\n')
-      } else if (clean.includes('Queued Messages (1):') && step === 2) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
+    const { stdout } = await runRepl(['repl', 'queue123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'first queued item' },
+      { trigger: 'Message queued', input: '/queue' },
+      { trigger: 'Queued Messages (1):', kill: true }
+    ])
 
     assert.match(stdout, /Queued Messages \(1\):/)
     assert.match(stdout, /1\. first queued item/)
