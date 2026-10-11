@@ -446,7 +446,7 @@ function printActivity(index, activity, sessionId = null) {
           sessionPatches.set(cleanId, currentPatch);
 
           if (interdiff) {
-            console.log(`\x1b[1m--- Step Interdiff (Changes in this turn) ---\x1b[0m`);
+            console.log(`\x1b[36mStep Interdiff:\x1b[0m`);
             console.log(marked.parse(`\`\`\`diff\n${interdiff}\n\`\`\``));
           }
         } else if (art.bashOutput) {
