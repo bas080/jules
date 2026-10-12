@@ -38,7 +38,7 @@ export function renderMarkdown (mdText) {
   return marked(mdText).trim()
 }
 
-const sessionPatches = new Map()
+export const sessionPatches = new Map()
 
 export function getInterdiff (previousPatch, currentPatch, sessionId) {
   const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'

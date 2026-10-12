@@ -18,6 +18,7 @@ import {
   loadSessionState,
   saveSessionState,
   renderMarkdown,
+  sessionPatches,
   log
 } from '../common.js'
 import { createSession } from './create.js'
@@ -251,10 +252,9 @@ export async function repl (sessionId, options = {}) {
       const cleanId = fullSessionId.replace(/^sessions\//, '')
       const patchPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`)
 
-      let patchContent = ''
-      if (fs.existsSync(patchPath)) {
-        patchContent = fs.readFileSync(patchPath, 'utf8')
-      } else {
+      let patchContent = sessionPatches.get(cleanId) || ''
+
+      if (!patchContent) {
         try {
           const activities = await fetchAllActivities(fullSessionId)
           for (let i = activities.length - 1; i >= 0; i--) {
@@ -263,7 +263,7 @@ export async function repl (sessionId, options = {}) {
               for (const art of act.artifacts) {
                 if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
                   patchContent = art.changeSet.gitPatch.unidiffPatch
-                  fs.writeFileSync(patchPath, patchContent, 'utf8')
+                  sessionPatches.set(cleanId, patchContent)
                   break
                 }
               }
@@ -275,9 +275,19 @@ export async function repl (sessionId, options = {}) {
         }
       }
 
+      if (!patchContent && fs.existsSync(patchPath)) {
+        try {
+          patchContent = fs.readFileSync(patchPath, 'utf8')
+          if (patchContent) sessionPatches.set(cleanId, patchContent)
+        } catch (e) {}
+      }
+
       if (!patchContent) {
         console.log('\x1b[90mNo git patch artifacts found for this session.\x1b[0m\n')
       } else {
+        try {
+          fs.writeFileSync(patchPath, patchContent, 'utf8')
+        } catch (e) {}
         console.log(`\n\x1b[36m📄 Latest Patch Artifact (${patchPath}):\x1b[0m\n`)
         console.log(renderMarkdown(`\`\`\`diff\n${patchContent}\n\`\`\``))
         console.log(`\x1b[90m💡 Apply to repository:\x1b[0m git apply ${patchPath}\n`)
