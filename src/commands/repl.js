@@ -482,7 +482,6 @@ export function registerReplCommand (yargs) {
     (y) => {
       return y
         .positional('sessionIdOrPrompt', { type: 'string', describe: 'Session ID or initial prompt' })
-        .option('s', { alias: 'session', type: 'string', describe: 'Session ID for REPL' })
         .option('c', { alias: 'create', type: 'boolean', describe: 'Create a new session (requires a prompt argument)' })
         .option('source', { type: 'string', describe: 'Link or filter by a specific code source' })
         .option('name', { type: 'string', describe: 'Set a custom display name/label for the REPL prompt' })
