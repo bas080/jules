@@ -69,7 +69,7 @@ export async function createSession (prompt, sourceId = null, options = {}) {
     body.requirePlanApproval = Boolean(options.requirePlanApproval)
   }
 
-  console.error(`\x1b[90mPrompt:\x1b[0m "${prompt}"`)
+  console.error(`\x1b[90mPrompt:\x1b[0m \x1b[1m"${prompt}"\x1b[0m`)
 
   const session = await apiRequest('sessions', 'POST', body)
   console.error(`\x1b[32mSession created successfully!\x1b[0m ID: ${session.name}`)
