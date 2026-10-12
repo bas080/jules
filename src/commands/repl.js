@@ -553,6 +553,10 @@ export function registerReplCommand (yargs) {
         .positional('prompt', { type: 'string', describe: 'Initial prompt when creating a session' })
         .option('c', { alias: 'create', type: 'boolean', describe: 'Create a new session (requires a prompt argument)' })
         .option('source', { type: 'string', describe: 'Link or filter by a specific code source' })
+        .option('starting-branch', { type: 'string', describe: 'Branch to start the session from (defaults to default branch or master)' })
+        .option('pr', { type: 'boolean', default: true, describe: 'Automatically create PR when completed (use --no-pr to disable)' })
+        .option('title', { type: 'string', describe: 'Set a custom title for the session' })
+        .option('require-plan-approval', { type: 'boolean', describe: 'Require explicit plan approval before agent starts work' })
         .option('name', { type: 'string', describe: 'Set a custom display name/label for the REPL prompt' })
         .option('history', { type: 'boolean', describe: 'Fetch and print full activity history on startup' })
         .option('git-pull', { type: 'boolean', describe: "Automatically run 'git pull' before starting the REPL" })
@@ -575,7 +579,7 @@ export function registerReplCommand (yargs) {
           console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
           process.exit(1)
         }
-        const newSessionId = await createSession(initialPrompt, argv.source)
+        const newSessionId = await createSession(initialPrompt, argv.source, argv)
         await repl(newSessionId, argv)
         return
       }

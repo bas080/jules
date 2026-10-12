@@ -127,7 +127,8 @@ export async function readStdin () {
 
 export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 2) {
   const disableCacheEnv = process.env.JULES_DISABLE_CACHE === 'true' || process.env.JULES_DISABLE_CACHE === '1'
-  const shouldBypass = bypassCache || disableCacheEnv
+  const isMutation = method.toUpperCase() !== 'GET'
+  const shouldBypass = bypassCache || disableCacheEnv || isMutation
 
   log(`API Request: ${method} ${endpoint} (bypassCache: ${shouldBypass})`)
   const options = {

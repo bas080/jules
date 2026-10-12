@@ -276,14 +276,14 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(res.stderr + res.stdout, /(missing|Not enough|argument)/i)
   })
 
-  test('create command with prompt and --source flag', async () => {
+  test('create command with prompt, --source, --starting-branch, --title, and --no-pr flags', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
         sources: [
           {
             name: 'sources/github/owner/repo',
-            githubRepo: { owner: 'owner', repo: 'repo' }
+            githubRepo: { owner: 'owner', repo: 'repo', defaultBranch: { displayName: 'main' } }
           }
         ]
       }
@@ -301,7 +301,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'create', 'test prompt', '--source', 'owner/repo'], {
+    const proc = spawn('node', [JULES_BIN, 'create', 'test prompt', '--source', 'owner/repo', '--starting-branch', 'feature/test', '--title', 'My Custom Title', '--no-pr', '--require-plan-approval'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -331,7 +331,13 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'test prompt')
-    assert.deepStrictEqual(postReq.body.sourceContext, { source: 'sources/github/owner/repo' })
+    assert.strictEqual(postReq.body.title, 'My Custom Title')
+    assert.strictEqual(postReq.body.requirePlanApproval, true)
+    assert.strictEqual(postReq.body.automationMode, undefined)
+    assert.deepStrictEqual(postReq.body.sourceContext, {
+      source: 'sources/github/owner/repo',
+      githubRepoContext: { startingBranch: 'feature/test' }
+    })
   })
 
   test('tail command defaults to latest session when no ID provided', async () => {
@@ -723,14 +729,14 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(postReq, undefined, 'Must not create session if source resolution fails')
   })
 
-  test('repl --create with --source creates session and starts REPL', async () => {
+  test('repl --create with --source creates session and starts REPL with startingBranch and AUTO_CREATE_PR by default', async () => {
     mockResponses['GET /sources'] = {
       status: 200,
       body: {
         sources: [
           {
             name: 'sources/github/owner/repo',
-            githubRepo: { owner: 'owner', repo: 'repo' }
+            githubRepo: { owner: 'owner', repo: 'repo', defaultBranch: { displayName: 'main' } }
           }
         ]
       }
@@ -759,7 +765,11 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'initial repl prompt')
-    assert.deepStrictEqual(postReq.body.sourceContext, { source: 'sources/github/owner/repo' })
+    assert.strictEqual(postReq.body.automationMode, 'AUTO_CREATE_PR')
+    assert.deepStrictEqual(postReq.body.sourceContext, {
+      source: 'sources/github/owner/repo',
+      githubRepoContext: { startingBranch: 'main' }
+    })
   })
 
   test('send command fails when --session flag is missing', async () => {
