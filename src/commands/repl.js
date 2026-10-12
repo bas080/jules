@@ -17,6 +17,7 @@ import {
   expandAtFilepaths,
   loadSessionState,
   saveSessionState,
+  renderMarkdown,
   log
 } from '../common.js'
 import { createSession } from './create.js'
@@ -219,10 +220,50 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text === '/diff' || text.startsWith('/diff')) {
+      const cleanId = fullSessionId.replace(/^sessions\//, '')
+      const patchPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`)
+
+      let patchContent = ''
+      if (fs.existsSync(patchPath)) {
+        patchContent = fs.readFileSync(patchPath, 'utf8')
+      } else {
+        try {
+          const activities = await fetchAllActivities(fullSessionId)
+          for (let i = activities.length - 1; i >= 0; i--) {
+            const act = activities[i]
+            if (act.artifacts && Array.isArray(act.artifacts)) {
+              for (const art of act.artifacts) {
+                if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
+                  patchContent = art.changeSet.gitPatch.unidiffPatch
+                  fs.writeFileSync(patchPath, patchContent, 'utf8')
+                  break
+                }
+              }
+            }
+            if (patchContent) break
+          }
+        } catch (err) {
+          log(`Failed to fetch activities for /diff: ${err.message}`)
+        }
+      }
+
+      if (!patchContent) {
+        console.log('\x1b[90mNo git patch artifacts found for this session.\x1b[0m\n')
+      } else {
+        console.log(`\n\x1b[36m📄 Latest Patch Artifact (${patchPath}):\x1b[0m\n`)
+        console.log(renderMarkdown(`\`\`\`diff\n${patchContent}\n\`\`\``))
+        console.log(`\x1b[90m💡 Apply to repository:\x1b[0m git apply ${patchPath}\n`)
+      }
+      rl.prompt()
+      return
+    }
+
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
+      console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
       console.log('  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt')
       console.log('  \x1b[32m/color <color>\x1b[0m      Change prompt color (green, cyan, blue, yellow, magenta, red, white, default)')
       console.log('  \x1b[32m/queue\x1b[0m              List currently queued messages')

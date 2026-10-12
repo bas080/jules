@@ -282,6 +282,19 @@ export function handlePollingError (err, context = 'background loop') {
   }
 }
 
+export function getActivityType (activity = {}) {
+  if (activity.type) return activity.type
+  if (activity.agentMessaged) return 'agentMessaged'
+  if (activity.userMessaged) return 'userMessaged'
+  if (activity.planGenerated) return 'planGenerated'
+  if (activity.planApproved) return 'planApproved'
+  if (activity.progressUpdated) return 'progressUpdated'
+  if (activity.sessionCompleted) return 'sessionCompleted'
+  if (activity.sessionFailed) return 'sessionFailed'
+  if (activity.artifacts) return 'artifactsGenerated'
+  return 'unknown'
+}
+
 export function printActivity (index, activity, sessionId = null, options = {}) {
   log(`Printing Activity ${index}: %O`, activity)
   const time = activity.createTime ? `\x1b[90m[${activity.createTime}]\x1b[0m ` : ''
@@ -293,7 +306,7 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
 
   console.error(`\n\x1b[1m--- Activity ${index} ---\x1b[0m`)
   console.error(`${time}${color}${originator}\x1b[0m`)
-  console.error(`\x1b[90mType:\x1b[0m ${activity.type || 'unknown'}`)
+  console.error(`\x1b[90mType:\x1b[0m ${getActivityType(activity)}`)
 
   if (activity.agentMessaged && activity.agentMessaged.agentMessage) {
     console.log(`\n${renderMarkdown(activity.agentMessaged.agentMessage)}\n`)
