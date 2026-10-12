@@ -538,6 +538,7 @@ export async function repl (sessionId, options = {}) {
   })
 
   rl.on('close', () => {
+    console.log('')
     process.removeListener('SIGCONT', onSigCont)
     clearTimeout(tailTimeout)
     process.exit(0)
