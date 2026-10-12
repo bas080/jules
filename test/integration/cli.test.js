@@ -331,7 +331,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'test prompt')
-    assert.strictEqual(postReq.body.source, 'sources/github/owner/repo')
+    assert.strictEqual(postReq.body.sourceContext, 'sources/github/owner/repo')
   })
 
   test('tail command defaults to latest session when no ID provided', async () => {
@@ -608,13 +608,13 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       status: 200,
       body: {
         sessions: [
-          { name: 'sessions/sourceExist123', source: 'sources/github/owner/repo', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
+          { name: 'sessions/sourceExist123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
         ]
       }
     }
     mockResponses['GET /sessions/sourceExist123'] = {
       status: 200,
-      body: { name: 'sessions/sourceExist123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/sourceExist123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/sourceExist123/activities'] = {
       status: 200,
@@ -759,7 +759,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'initial repl prompt')
-    assert.strictEqual(postReq.body.source, 'sources/github/owner/repo')
+    assert.strictEqual(postReq.body.sourceContext, 'sources/github/owner/repo')
   })
 
   test('send command fails when --session flag is missing', async () => {
@@ -1332,7 +1332,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('repl prompt label formats as source:sessionId when source is present and sessionId when source is absent', async () => {
     mockResponses['GET /sessions/label123'] = {
       status: 200,
-      body: { name: 'sessions/label123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/label123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/label123/activities'] = {
       status: 200,
@@ -1416,7 +1416,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
   test('repl /rename command renames prompt label and overwrites source:sessionId', async () => {
     mockResponses['GET /sessions/rename123'] = {
       status: 200,
-      body: { name: 'sessions/rename123', source: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+      body: { name: 'sessions/rename123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
     }
     mockResponses['GET /sessions/rename123/activities'] = {
       status: 200,

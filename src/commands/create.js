@@ -36,7 +36,7 @@ export async function createSession (prompt, sourceId = null) {
   console.error('\x1b[36mCreating session...')
   const body = { prompt }
   if (finalSourceId) {
-    body.source = finalSourceId
+    body.sourceContext = finalSourceId
     console.error(`\x1b[90mSource ID:\x1b[0m ${finalSourceId}`)
   }
   console.error(`\x1b[90mPrompt:\x1b[0m "${prompt}"`)
