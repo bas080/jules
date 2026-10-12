@@ -115,6 +115,8 @@ export async function repl (sessionId, options = {}) {
         process.stdin.setRawMode(true)
       }
       process.stdin.resume()
+      rl.resume()
+      updatePrompt()
       rl.prompt(true)
     } catch (err) {
       log(`SIGCONT handler error: ${err.message}`)
