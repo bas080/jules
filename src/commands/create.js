@@ -65,8 +65,10 @@ export async function createSession (prompt, sourceId = null, options = {}) {
     body.title = options.title
   }
 
-  if (options.requirePlanApproval !== undefined) {
-    body.requirePlanApproval = Boolean(options.requirePlanApproval)
+  if (options.planApproval === false || options.requirePlanApproval === false) {
+    body.requirePlanApproval = false
+  } else {
+    body.requirePlanApproval = true
   }
 
   console.error(`\x1b[90mPrompt:\x1b[0m \x1b[1m"${prompt}"\x1b[0m`)
@@ -87,7 +89,7 @@ export function registerCreateCommand (yargs) {
         .option('starting-branch', { type: 'string', describe: 'Branch to start the session from (defaults to default branch or master)' })
         .option('pr', { type: 'boolean', default: true, describe: 'Automatically create PR when completed (use --no-pr to disable)' })
         .option('title', { type: 'string', describe: 'Set a custom title for the session' })
-        .option('require-plan-approval', { type: 'boolean', describe: 'Require explicit plan approval before agent starts work' })
+        .option('plan-approval', { type: 'boolean', default: true, describe: 'Require explicit plan approval before agent starts work (use --no-plan-approval to disable)' })
     },
     async (argv) => {
       let finalPrompt = argv.prompt
