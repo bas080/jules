@@ -1,8 +1,9 @@
 import { fetchSources, apiRequest, log, expandAtFilepaths } from '../common.js'
 import { repl } from './repl.js'
 
-export async function createSession (prompt, sourceId = null) {
+export async function createSession (prompt, sourceId = null, options = {}) {
   let finalSourceId = sourceId
+  let matchedSource = null
 
   if (sourceId !== null && sourceId !== undefined) {
     if (typeof sourceId !== 'string' || !sourceId.trim() || sourceId === 'true' || sourceId === 'false') {
@@ -13,7 +14,7 @@ export async function createSession (prompt, sourceId = null) {
     try {
       const sources = await fetchSources()
       if (!sourceId.startsWith('sources/')) {
-        const matchedSource = sources.find(s =>
+        matchedSource = sources.find(s =>
           s.githubRepo && `${s.githubRepo.owner}/${s.githubRepo.repo}` === sourceId
         )
         if (matchedSource) {
@@ -23,8 +24,8 @@ export async function createSession (prompt, sourceId = null) {
           throw new Error(`Source not found: ${sourceId}. Please use 'jules sources' to find a valid source name.`)
         }
       } else {
-        const exists = sources.some(s => s.name === sourceId || s.id === sourceId)
-        if (!exists && sources.length > 0) {
+        matchedSource = sources.find(s => s.name === sourceId || s.id === sourceId)
+        if (!matchedSource && sources.length > 0) {
           throw new Error(`Source not found: ${sourceId}. Please use 'jules sources' to find a valid source name.`)
         }
       }
@@ -35,10 +36,39 @@ export async function createSession (prompt, sourceId = null) {
 
   console.error('\x1b[36mCreating session...')
   const body = { prompt }
+
   if (finalSourceId) {
-    body.sourceContext = { source: finalSourceId }
+    let resolvedBranch = options.startingBranch
+    if (!resolvedBranch && matchedSource && matchedSource.githubRepo && matchedSource.githubRepo.defaultBranch) {
+      const db = matchedSource.githubRepo.defaultBranch
+      resolvedBranch = typeof db === 'object' ? (db.displayName || db.name) : db
+    }
+    if (!resolvedBranch) {
+      resolvedBranch = 'master'
+    }
+
+    body.sourceContext = {
+      source: finalSourceId,
+      githubRepoContext: {
+        startingBranch: resolvedBranch
+      }
+    }
     console.error(`\x1b[90mSource ID:\x1b[0m ${finalSourceId}`)
+    console.error(`\x1b[90mStarting Branch:\x1b[0m ${resolvedBranch}`)
   }
+
+  if (options.pr !== false) {
+    body.automationMode = 'AUTO_CREATE_PR'
+  }
+
+  if (options.title) {
+    body.title = options.title
+  }
+
+  if (options.requirePlanApproval !== undefined) {
+    body.requirePlanApproval = Boolean(options.requirePlanApproval)
+  }
+
   console.error(`\x1b[90mPrompt:\x1b[0m "${prompt}"`)
 
   const session = await apiRequest('sessions', 'POST', body)
@@ -54,6 +84,10 @@ export function registerCreateCommand (yargs) {
       return y
         .positional('prompt', { type: 'string', describe: 'Initial prompt for the session' })
         .option('source', { type: 'string', describe: 'Link the session to a specific code source' })
+        .option('starting-branch', { type: 'string', describe: 'Branch to start the session from (defaults to default branch or master)' })
+        .option('pr', { type: 'boolean', default: true, describe: 'Automatically create PR when completed (use --no-pr to disable)' })
+        .option('title', { type: 'string', describe: 'Set a custom title for the session' })
+        .option('require-plan-approval', { type: 'boolean', describe: 'Require explicit plan approval before agent starts work' })
     },
     async (argv) => {
       let finalPrompt = argv.prompt
@@ -63,8 +97,8 @@ export function registerCreateCommand (yargs) {
         console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
         process.exit(1)
       }
-      const newSessionId = await createSession(finalPrompt, argv.source)
-      await repl(newSessionId)
+      const newSessionId = await createSession(finalPrompt, argv.source, argv)
+      await repl(newSessionId, argv)
     }
   )
 }
