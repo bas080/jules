@@ -301,7 +301,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'create', 'test prompt', '--source', 'owner/repo', '--starting-branch', 'feature/test', '--title', 'My Custom Title', '--no-pr', '--require-plan-approval'], {
+    const proc = spawn('node', [JULES_BIN, 'create', 'test prompt', '--source', 'owner/repo', '--starting-branch', 'feature/test', '--title', 'My Custom Title', '--no-pr', '--no-plan-approval'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -332,7 +332,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'test prompt')
     assert.strictEqual(postReq.body.title, 'My Custom Title')
-    assert.strictEqual(postReq.body.requirePlanApproval, true)
+    assert.strictEqual(postReq.body.requirePlanApproval, false)
     assert.strictEqual(postReq.body.automationMode, undefined)
     assert.deepStrictEqual(postReq.body.sourceContext, {
       source: 'sources/github/owner/repo',

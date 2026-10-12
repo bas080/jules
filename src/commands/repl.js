@@ -556,7 +556,7 @@ export function registerReplCommand (yargs) {
         .option('starting-branch', { type: 'string', describe: 'Branch to start the session from (defaults to default branch or master)' })
         .option('pr', { type: 'boolean', default: true, describe: 'Automatically create PR when completed (use --no-pr to disable)' })
         .option('title', { type: 'string', describe: 'Set a custom title for the session' })
-        .option('require-plan-approval', { type: 'boolean', describe: 'Require explicit plan approval before agent starts work' })
+        .option('plan-approval', { type: 'boolean', default: true, describe: 'Require explicit plan approval before agent starts work (use --no-plan-approval to disable)' })
         .option('name', { type: 'string', describe: 'Set a custom display name/label for the REPL prompt' })
         .option('history', { type: 'boolean', describe: 'Fetch and print full activity history on startup' })
         .option('git-pull', { type: 'boolean', describe: "Automatically run 'git pull' before starting the REPL" })
