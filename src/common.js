@@ -186,7 +186,10 @@ export async function fetchSessions () {
 
 export function formatSourceDisplay (s) {
   if (!s) return 'none'
-  let display = String(s)
+  let display = typeof s === 'object' ? (s.source || s.name || s.sourceContext || String(s)) : String(s)
+  if (typeof display === 'object') {
+    display = display.source || display.name || String(display)
+  }
   if (display.startsWith('sources/github/')) {
     display = display.replace(/^sources\/github\//, '')
   } else if (display.startsWith('sources/')) {
