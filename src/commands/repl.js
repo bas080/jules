@@ -536,11 +536,11 @@ export async function repl (sessionId, options = {}) {
 
 export function registerReplCommand (yargs) {
   return yargs.command(
-    'repl [sessionIdOrPrompt]',
+    'repl [prompt]',
     'Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)',
     (y) => {
       return y
-        .positional('sessionIdOrPrompt', { type: 'string', describe: 'Session ID or initial prompt' })
+        .positional('prompt', { type: 'string', describe: 'Initial prompt when creating a session' })
         .option('c', { alias: 'create', type: 'boolean', describe: 'Create a new session (requires a prompt argument)' })
         .option('source', { type: 'string', describe: 'Link or filter by a specific code source' })
         .option('name', { type: 'string', describe: 'Set a custom display name/label for the REPL prompt' })
@@ -554,13 +554,13 @@ export function registerReplCommand (yargs) {
           console.error('\x1b[31m❌ Error: Cannot specify `--session` option when creating a new session.\x1b[0m')
           process.exit(1)
         }
-        if (!argv.sessionIdOrPrompt) {
+        if (!argv.prompt) {
           console.error('\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m')
           process.exit(1)
         }
-        let initialPrompt = argv.sessionIdOrPrompt
+        let initialPrompt = argv.prompt
         try {
-          initialPrompt = expandAtFilepaths(argv.sessionIdOrPrompt)
+          initialPrompt = expandAtFilepaths(argv.prompt)
         } catch (err) {
           console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
           process.exit(1)
@@ -570,7 +570,7 @@ export function registerReplCommand (yargs) {
         return
       }
 
-      const explicitSessionId = argv.session || argv.sessionIdOrPrompt
+      const explicitSessionId = argv.session
 
       if (explicitSessionId) {
         if (argv.source) {
