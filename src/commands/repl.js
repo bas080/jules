@@ -118,6 +118,8 @@ export async function repl (sessionId, options = {}) {
       rl.resume()
       updatePrompt()
       rl.prompt(true)
+      clearTimeout(tailTimeout)
+      tailTimeout = setTimeout(poll, 50)
     } catch (err) {
       log(`SIGCONT handler error: ${err.message}`)
     }
