@@ -22,6 +22,7 @@ import {
   log
 } from '../common.js'
 import { createSession } from './create.js'
+import { archiveSession } from './cleanup.js'
 
 export async function repl (sessionId, options = {}) {
   let hasPulledForWork = false
@@ -224,13 +225,25 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
         rl.prompt()
         return
       }
+    }
+
+    if (text === '/archive' || text.startsWith('/archive')) {
+      try {
+        await archiveSession(fullSessionId)
+        console.log('\x1b[32m✔ Session archived.\x1b[0m')
+        rl.close()
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error archiving session: ${err.message}\x1b[0m`)
+        rl.prompt()
+      }
+      return
     }
 
     if (text === '/status' || text.startsWith('/status')) {
@@ -352,6 +365,7 @@ export async function repl (sessionId, options = {}) {
 
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
+      console.log('  \x1b[32m/archive\x1b[0m           Archive current session and exit REPL')
       console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
