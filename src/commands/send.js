@@ -104,7 +104,6 @@ export function registerSendCommand (yargs) {
     (y) => {
       return y
         .positional('message', { type: 'string', describe: 'Message prompt to send' })
-        .option('s', { alias: 'session', type: 'string', describe: 'Session ID to send message to' })
         .option('git-patch', { type: 'boolean', describe: 'Automatically apply received git patches to repository' })
     },
     async (argv) => {

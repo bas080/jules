@@ -55,7 +55,6 @@ export function registerTailCommand (yargs) {
     (y) => {
       return y
         .positional('sessionId', { type: 'string', describe: 'Session ID to tail' })
-        .option('s', { alias: 'session', type: 'string', describe: 'Session ID to tail' })
         .option('history', { type: 'boolean', describe: 'Fetch and print full activity history on startup' })
         .option('git-patch', { type: 'boolean', describe: 'Automatically apply received git patches to repository' })
     },

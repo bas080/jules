@@ -5,7 +5,7 @@ export function registerApproveCommand (yargs) {
     'approve',
     'Approve a generated plan for a session',
     (y) => {
-      return y.option('s', { alias: 'session', type: 'string', describe: 'Session ID to approve plan for' })
+      return y
     },
     async (argv) => {
       if (!argv.session) {

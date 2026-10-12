@@ -22,8 +22,8 @@ export async function runCli (argv = process.argv) {
   const parser = yargs(args)
     .scriptName('jules')
     .usage('Jules CLI - AI Session Manager\n\nUsage: $0 <command> [options]')
-    .option('s', {
-      alias: 'session',
+    .option('session', {
+      alias: 's',
       type: 'string',
       describe: 'Session ID to target or operate on'
     })
