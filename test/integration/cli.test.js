@@ -1336,7 +1336,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const { stdout } = await runRepl(['repl', 'diff123'], [
       { trigger: 'Jules REPL started for session', input: '/diff' },
-      { trigger: 'Latest Patch Artifact', kill: true }
+      { trigger: 'Apply to repository', kill: true }
     ])
 
     assert.match(stdout, /Latest Patch Artifact/)
