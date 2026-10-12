@@ -1466,6 +1466,31 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(sendMsgReq.body.prompt, /queued msg 1\n\n---\n\nqueued msg 2/)
   })
 
+  test('repl /flush <msg> appends inline message and flushes immediately', async () => {
+    mockResponses['GET /sessions/replFlushMsg123'] = {
+      status: 200,
+      body: { name: 'sessions/replFlushMsg123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replFlushMsg123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/replFlushMsg123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'replFlushMsg123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued msg prior' },
+      { trigger: 'Message queued', input: '/flush immediate message' },
+      { trigger: 'Messages flushed and sent immediately', kill: true }
+    ])
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replFlushMsg123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.match(sendMsgReq.body.prompt, /queued msg prior\n\n---\n\nimmediate message/)
+  })
+
   test('repl sends message immediately when state is AWAITING_USER_FEEDBACK', async () => {
     mockResponses['GET /sessions/feedback123'] = {
       status: 200,

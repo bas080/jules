@@ -471,12 +471,28 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
-    if (text === '/flush' || text === '/now' || text.startsWith('/flush') || text.startsWith('/now')) {
+    if (text === '/flush' || text === '/now' || text.startsWith('/flush ') || text.startsWith('/now ')) {
+      const match = text.match(/^\/(?:flush|now)(?:\s+(.*))?$/)
+      const inlineMsg = match && match[1] ? match[1].trim() : ''
+
+      if (inlineMsg) {
+        let expandedMsg = inlineMsg
+        try {
+          expandedMsg = expandAtFilepaths(inlineMsg)
+        } catch (err) {
+          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
+          rl.prompt()
+          return
+        }
+        messageQueue.push(expandedMsg)
+      }
+
       if (messageQueue.length === 0) {
         console.error('\x1b[31m❌ Error: No queued messages to flush.\x1b[0m')
         rl.prompt()
         return
       }
+
       const combinedPayload = messageQueue.join('\n\n---\n\n')
       messageQueue.length = 0
       saveQueue(fullSessionId, messageQueue)
