@@ -109,6 +109,19 @@ export async function repl (sessionId, options = {}) {
     rl.setPrompt(getPromptString())
   }
 
+  const onSigCont = () => {
+    try {
+      if (process.stdin.isTTY) {
+        process.stdin.setRawMode(true)
+      }
+      process.stdin.resume()
+      rl.prompt(true)
+    } catch (err) {
+      log(`SIGCONT handler error: ${err.message}`)
+    }
+  }
+  process.on('SIGCONT', onSigCont)
+
   rl.prompt()
 
   let lastSeenActivityIndex = -1
@@ -511,6 +524,7 @@ export async function repl (sessionId, options = {}) {
   })
 
   rl.on('close', () => {
+    process.removeListener('SIGCONT', onSigCont)
     clearTimeout(tailTimeout)
     process.exit(0)
   })
