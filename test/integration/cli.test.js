@@ -331,7 +331,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'test prompt')
-    assert.strictEqual(postReq.body.sourceContext, 'sources/github/owner/repo')
+    assert.deepStrictEqual(postReq.body.sourceContext, { source: 'sources/github/owner/repo' })
   })
 
   test('tail command defaults to latest session when no ID provided', async () => {
@@ -510,7 +510,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: {}
     }
 
-    const { stdout } = await runRepl(['repl', '123'], [
+    const { stdout } = await runRepl(['repl', '-s', '123'], [
       { trigger: 'Jules REPL started for session', input: 'hello repl' },
       { trigger: 'Message sent... Agent is thinking', kill: true }
     ])
@@ -759,7 +759,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
     assert.ok(postReq)
     assert.strictEqual(postReq.body.prompt, 'initial repl prompt')
-    assert.strictEqual(postReq.body.sourceContext, 'sources/github/owner/repo')
+    assert.deepStrictEqual(postReq.body.sourceContext, { source: 'sources/github/owner/repo' })
   })
 
   test('send command fails when --session flag is missing', async () => {
@@ -1171,7 +1171,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: {}
     }
 
-    await runRepl(['repl', 'replUp123'], [
+    await runRepl(['repl', '-s', 'replUp123'], [
       { trigger: 'Jules REPL started for session', input: `/upload ${tmpFile}` },
       { trigger: 'File uploaded... Agent is thinking', kill: true }
     ])
@@ -1200,7 +1200,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: {}
     }
 
-    await runRepl(['repl', 'replAt123'], [
+    await runRepl(['repl', '-s', 'replAt123'], [
       { trigger: 'Jules REPL started for session', input: `check code @${tmpFile}` },
       { trigger: 'Message sent... Agent is thinking', kill: true }
     ])
@@ -1292,7 +1292,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'replHelp123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'replHelp123'], [
       { trigger: 'Jules REPL started for session', input: '/help' },
       { trigger: '@<filepath>', kill: true }
     ])
@@ -1334,7 +1334,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     }
 
-    const { stdout } = await runRepl(['repl', 'diff123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'diff123'], [
       { trigger: 'Jules REPL started for session', input: '/diff' },
       { trigger: 'Apply to repository', kill: true }
     ])
@@ -1376,7 +1376,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'label123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'label123'], [
       { trigger: 'owner/repo:label123 >', kill: true }
     ])
 
@@ -1397,7 +1397,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: {}
     }
 
-    await runRepl(['repl', 'replFlush123'], [
+    await runRepl(['repl', '-s', 'replFlush123'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued msg 1' },
       { trigger: 'Message queued', input: 'queued msg 2' },
       { trigger: 'replFlush123 [2] >', input: '/flush' },
@@ -1423,7 +1423,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: {}
     }
 
-    await runRepl(['repl', 'feedback123'], [
+    await runRepl(['repl', '-s', 'feedback123'], [
       { trigger: 'State: AWAITING_USER_FEEDBACK', input: 'feedback response' },
       { trigger: 'Message sent... Agent is thinking', kill: true }
     ])
@@ -1443,7 +1443,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'pull123', '--git-pull'], [
+    const { stdout } = await runRepl(['repl', '-s', 'pull123', '--git-pull'], [
       { trigger: "Running 'git pull'", kill: true }
     ])
 
@@ -1460,7 +1460,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'rename123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'rename123'], [
       { trigger: 'Jules REPL started for session', input: '/rename custom-session-name' },
       { trigger: 'REPL prompt renamed to: custom-session-name', kill: true }
     ])
@@ -1479,7 +1479,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'name123', '--name', 'my-custom-prompt'], [
+    const { stdout } = await runRepl(['repl', '-s', 'name123', '--name', 'my-custom-prompt'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued message test' },
       { trigger: 'my-custom-prompt [1] >', kill: true }
     ])
@@ -1498,7 +1498,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'queue123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'queue123'], [
       { trigger: 'State: IN_PROGRESS', input: 'first queued item' },
       { trigger: 'Message queued', input: '/queue' },
       { trigger: '1. first queued item', kill: true }
@@ -1518,7 +1518,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'stateCheck123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'stateCheck123'], [
       { trigger: 'Jules REPL started for session', input: 'test message when working' },
       { trigger: 'Jules is working. Message queued', kill: true }
     ])
@@ -1536,7 +1536,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'color123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'color123'], [
       { trigger: 'Jules REPL started for session', input: '/color cyan' },
       { trigger: 'REPL prompt color set to cyan', kill: true }
     ])
@@ -1608,7 +1608,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { error: { code: 429, message: 'Quota exceeded', status: 'RESOURCE_EXHAUSTED' } }
     }
 
-    const { stdout } = await runRepl(['repl', 'rate429'], [
+    const { stdout } = await runRepl(['repl', '-s', 'rate429'], [
       { trigger: 'Rate limit reached (HTTP 429)', kill: true }
     ])
 
@@ -1626,7 +1626,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'clear123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'clear123'], [
       { trigger: 'Jules REPL started for session', input: '/clear' },
       { trigger: 'clear123 >', kill: true }
     ])
@@ -1644,7 +1644,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const { stdout } = await runRepl(['repl', 'web123'], [
+    const { stdout } = await runRepl(['repl', '-s', 'web123'], [
       { trigger: 'Jules REPL started for session', input: '/web' },
       { trigger: 'Opening session in browser: https://jules.google.com/session/web123', kill: true }
     ])
@@ -1666,7 +1666,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
 
     // Process 1: set name and color
-    const { stdout: stdout1 } = await runRepl(['repl', 'persistedstate123'], [
+    const { stdout: stdout1 } = await runRepl(['repl', '-s', 'persistedstate123'], [
       { trigger: 'Jules REPL started for session', input: '/rename my-custom-session' },
       { trigger: 'REPL prompt renamed to: my-custom-session', input: '/color cyan' },
       { trigger: 'REPL prompt color set to cyan', kill: true }
@@ -1681,7 +1681,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(stateData.color, 'cyan')
 
     // Process 2: start REPL again and verify custom prompt label restored
-    const { stdout: stdout2 } = await runRepl(['repl', 'persistedstate123'], [
+    const { stdout: stdout2 } = await runRepl(['repl', '-s', 'persistedstate123'], [
       { trigger: 'my-custom-session >', kill: true }
     ])
 
@@ -1711,13 +1711,13 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
 
     // Default: does not print past history message
-    const resDefault = await runRepl(['repl', 'hist123'], [
+    const resDefault = await runRepl(['repl', '-s', 'hist123'], [
       { trigger: 'Jules REPL started for session', kill: true }
     ])
     assert.doesNotMatch(resDefault.stdout, /Past history message/)
 
     // With --history: prints past history message
-    const resHistory = await runRepl(['repl', 'hist123', '--history'], [
+    const resHistory = await runRepl(['repl', '-s', 'hist123', '--history'], [
       { trigger: 'Past history message', kill: true }
     ])
     assert.match(resHistory.stdout, /Past history message/)
