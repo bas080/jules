@@ -1313,6 +1313,31 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(sendMsgReq, undefined, 'Must not send message to API when unknown slash command is entered')
   })
 
+  test('repl /status command displays session status and PR URL', async () => {
+    mockResponses['GET /sessions/status123'] = {
+      status: 200,
+      body: {
+        name: 'sessions/status123',
+        title: 'Fix Auth Bug',
+        state: 'COMPLETED',
+        createTime: '2025-01-01T00:00:00Z',
+        outputs: [
+          { pullRequest: { url: 'https://github.com/owner/repo/pull/42' } }
+        ]
+      }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'status123'], [
+      { trigger: 'Jules REPL started for session', input: '/status' },
+      { trigger: 'https://github.com/owner/repo/pull/42', kill: true }
+    ])
+
+    assert.match(stdout, /Session Status:/)
+    assert.match(stdout, /Title: Fix Auth Bug/)
+    assert.match(stdout, /State: COMPLETED/)
+    assert.match(stdout, /Pull Request: https:\/\/github\.com\/owner\/repo\/pull\/42/)
+  })
+
   test('repl /help command displays available REPL slash commands and CLI options', async () => {
     mockResponses['GET /sessions/replHelp123'] = {
       status: 200,
@@ -1329,6 +1354,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.match(stdout, /Available REPL Commands:/)
+    assert.match(stdout, /\/status/)
     assert.match(stdout, /\/upload <filepath>/)
     assert.match(stdout, /\/approve/)
     assert.match(stdout, /\/diff/)

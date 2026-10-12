@@ -224,13 +224,67 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
+      const knownCommands = ['/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
         rl.prompt()
         return
       }
+    }
+
+    if (text === '/status' || text.startsWith('/status')) {
+      try {
+        const cleanId = fullSessionId.replace(/^sessions\//, '')
+        const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+        console.log('\n\x1b[1mSession Status:\x1b[0m')
+        console.log(`  \x1b[36mSession ID:\x1b[0m ${fullSessionId}`)
+        if (sessionInfo.title) console.log(`  \x1b[36mTitle:\x1b[0m ${sessionInfo.title}`)
+        if (sessionInfo.state) console.log(`  \x1b[36mState:\x1b[0m ${sessionInfo.state}`)
+        if (sessionInfo.createTime) console.log(`  \x1b[36mCreated:\x1b[0m ${sessionInfo.createTime}`)
+        if (sessionInfo.updateTime) console.log(`  \x1b[36mUpdated:\x1b[0m ${sessionInfo.updateTime}`)
+
+        let prUrl = null
+        if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
+          for (const out of sessionInfo.outputs) {
+            if (out.pullRequest && out.pullRequest.url) {
+              prUrl = out.pullRequest.url
+              break
+            }
+          }
+        }
+
+        if (!prUrl) {
+          try {
+            const activities = await fetchAllActivities(fullSessionId)
+            for (let i = activities.length - 1; i >= 0; i--) {
+              const act = activities[i]
+              if (act.artifacts && Array.isArray(act.artifacts)) {
+                for (const art of act.artifacts) {
+                  if (art.pullRequest && art.pullRequest.url) {
+                    prUrl = art.pullRequest.url
+                    break
+                  }
+                }
+              }
+              if (prUrl) break
+            }
+          } catch (err) {
+            log(`Failed to fetch activities for PR URL: ${err.message}`)
+          }
+        }
+
+        if (prUrl) {
+          console.log(`  \x1b[32mPull Request:\x1b[0m ${prUrl}`)
+        } else {
+          console.log('  \x1b[90mPull Request:\x1b[0m None generated yet')
+        }
+        console.log(`  \x1b[36mWeb URL:\x1b[0m https://jules.google.com/session/${cleanId}\n`)
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error fetching session status: ${err.message}\x1b[0m`)
+      }
+      rl.prompt()
+      return
     }
 
     if (text === '/web' || text.startsWith('/web')) {
@@ -298,6 +352,7 @@ export async function repl (sessionId, options = {}) {
 
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
+      console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
       console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
