@@ -222,6 +222,16 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text.startsWith('/')) {
+      const knownCommands = ['/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
+      const cmdToken = text.split(/\s+/)[0].toLowerCase()
+      if (!knownCommands.includes(cmdToken)) {
+        console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
+        rl.prompt()
+        return
+      }
+    }
+
     if (text === '/web' || text.startsWith('/web')) {
       const cleanId = fullSessionId.replace(/^sessions\//, '')
       const webUrl = `https://jules.google.com/session/${cleanId}`
