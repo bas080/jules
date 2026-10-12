@@ -1300,10 +1300,47 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /Available REPL Commands:/)
     assert.match(stdout, /\/upload <filepath>/)
     assert.match(stdout, /\/approve/)
+    assert.match(stdout, /\/diff/)
     assert.match(stdout, /\/rename <name>/)
     assert.match(stdout, /\/queue/)
     assert.match(stdout, /\/flush/)
     assert.match(stdout, /\/help/)
+  })
+
+  test('repl /diff command displays patch artifact when available', async () => {
+    mockResponses['GET /sessions/diff123'] = {
+      status: 200,
+      body: { name: 'sessions/diff123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/diff123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            originator: 'AGENT',
+            createTime: '2025-01-01T00:00:01Z',
+            artifacts: [
+              {
+                changeSet: {
+                  gitPatch: {
+                    unidiffPatch: '--- a/test.txt\n+++ b/test.txt\n@@ -1 +1 @@\n-foo\n+bar\n'
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+
+    const { stdout } = await runRepl(['repl', 'diff123'], [
+      { trigger: 'Jules REPL started for session', input: '/diff' },
+      { trigger: 'Latest Patch Artifact', kill: true }
+    ])
+
+    assert.match(stdout, /Latest Patch Artifact/)
+    assert.match(stdout, /\+bar/)
   })
 
   test('@filepath expansion ignores email addresses and non-path tokens', async () => {
