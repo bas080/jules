@@ -96,7 +96,7 @@ export async function repl (sessionId, options = {}) {
 
   function getPromptString () {
     const queueSuffix = messageQueue.length > 0 ? ` [${messageQueue.length}]` : ''
-    return `${promptColorCode}${basePromptLabel}${queueSuffix} > \x1b[0m`
+    return `${promptColorCode}${basePromptLabel}${queueSuffix} ❯ \x1b[0m`
   }
 
   const rl = readline.createInterface({
