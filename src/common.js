@@ -201,7 +201,7 @@ export function listSessionsFromList (sessions) {
 
   sessions.forEach((s) => {
     const id = s.name || s.id || 'unknown'
-    const rawSource = s.source || s.sourceId
+    const rawSource = s.sourceContext || s.source || s.sourceId
     const sourceDisplay = formatSourceDisplay(rawSource)
     const state = s.state || 'UNKNOWN'
     const created = s.createTime || 'unknown'

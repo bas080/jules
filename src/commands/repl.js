@@ -53,7 +53,7 @@ export async function repl (sessionId, options = {}) {
   } else if (!sessionState.name) {
     try {
       const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
-      let source = sessionInfo.source || sessionInfo.sourceId
+      let source = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
       if (source) {
         if (source.startsWith('sources/github/')) {
           source = source.replace(/^sources\/github\//, '')
@@ -537,7 +537,7 @@ export function registerReplCommand (yargs) {
         try {
           const sessions = await fetchSessions()
           const matchingSessions = sessions.filter(s => {
-            const sSource = s.source || s.sourceId
+            const sSource = s.sourceContext || s.source || s.sourceId
             return sSource === fullSourceId || sSource === argv.source
           })
 
