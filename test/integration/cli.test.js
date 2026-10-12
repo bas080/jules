@@ -1313,6 +1313,22 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(sendMsgReq, undefined, 'Must not send message to API when unknown slash command is entered')
   })
 
+  test('repl /archive command archives current session and exits REPL', async () => {
+    mockResponses['POST /sessions/archive123:archive'] = {
+      status: 200,
+      body: { name: 'sessions/archive123', state: 'ARCHIVED' }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'archive123'], [
+      { trigger: 'Jules REPL started for session', input: '/archive' },
+      { trigger: 'Session archived', kill: true }
+    ])
+
+    assert.match(stdout, /Session archived/)
+    const archiveReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/archive123:archive')
+    assert.ok(archiveReq)
+  })
+
   test('repl /status command displays session status and PR URL', async () => {
     mockResponses['GET /sessions/status123'] = {
       status: 200,
@@ -1354,6 +1370,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.match(stdout, /Available REPL Commands:/)
+    assert.match(stdout, /\/archive/)
     assert.match(stdout, /\/status/)
     assert.match(stdout, /\/upload <filepath>/)
     assert.match(stdout, /\/approve/)
