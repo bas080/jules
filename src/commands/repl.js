@@ -225,7 +225,7 @@ export async function repl (sessionId, options = {}) {
     tailTimeout = setTimeout(poll, currentPollInterval)
   }
 
-  let tailTimeout = setTimeout(poll, currentPollInterval)
+  let tailTimeout = setTimeout(poll, 0)
 
   rl.on('line', async (line) => {
     const text = line.trim()
@@ -235,7 +235,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -373,6 +373,31 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text.startsWith('/history')) {
+      const parts = text.split(/\s+/).filter(Boolean)
+      const count = parts[1] && !isNaN(parseInt(parts[1], 10)) ? parseInt(parts[1], 10) : 5
+      try {
+        const activities = await fetchAllActivities(fullSessionId)
+        const userActivities = activities.filter(a => a.userMessaged && a.userMessaged.userMessage)
+        if (userActivities.length === 0) {
+          console.log('\x1b[90mNo sent user prompts found for this session.\x1b[0m\n')
+        } else {
+          const recent = userActivities.slice(-count)
+          console.log(`\n\x1b[1mRecent User Prompts (${recent.length}):\x1b[0m`)
+          recent.forEach((act, i) => {
+            const time = act.createTime ? `\x1b[90m[${new Date(act.createTime).toLocaleTimeString()}]\x1b[0m ` : ''
+            const msg = act.userMessaged.userMessage.trim()
+            console.log(`  \x1b[36m${i + 1}.\x1b[0m ${time}"${msg}"`)
+          })
+          console.log('')
+        }
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error fetching history: ${err.message}\x1b[0m`)
+      }
+      rl.prompt()
+      return
+    }
+
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
       console.log('  \x1b[32m/archive\x1b[0m           Archive current session and exit REPL')
@@ -383,6 +408,7 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt')
       console.log('  \x1b[32m/color <color>\x1b[0m      Change prompt color (green, cyan, blue, yellow, magenta, red, white, default)')
       console.log('  \x1b[32m/queue\x1b[0m              List currently queued messages')
+      console.log('  \x1b[32m/history [count]\x1b[0m    List recent sent user prompts')
       console.log('  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR')
       console.log('  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately')
       console.log('  \x1b[32m/clear\x1b[0m              Clear terminal screen')

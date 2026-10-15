@@ -1449,8 +1449,46 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /\/diff/)
     assert.match(stdout, /\/rename <name>/)
     assert.match(stdout, /\/queue/)
+    assert.match(stdout, /\/history \[count\]/)
     assert.match(stdout, /\/flush/)
     assert.match(stdout, /\/help/)
+  })
+
+  test('repl /history command displays recent user prompts', async () => {
+    mockResponses['GET /sessions/replHist123'] = {
+      status: 200,
+      body: { name: 'sessions/replHist123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replHist123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'userMessaged',
+            originator: 'USER',
+            createTime: '2025-01-01T10:00:00Z',
+            userMessaged: { userMessage: 'First test prompt' }
+          },
+          {
+            id: 'act2',
+            type: 'userMessaged',
+            originator: 'USER',
+            createTime: '2025-01-01T10:05:00Z',
+            userMessaged: { userMessage: 'Second test prompt' }
+          }
+        ]
+      }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'replHist123'], [
+      { trigger: 'Jules REPL started for session', input: '/history' },
+      { trigger: 'Second test prompt', kill: true }
+    ])
+
+    assert.match(stdout, /Recent User Prompts \(2\):/)
+    assert.match(stdout, /1\. .* "First test prompt"/)
+    assert.match(stdout, /2\. .* "Second test prompt"/)
   })
 
   test('repl /diff command displays patch artifact when available', async () => {
