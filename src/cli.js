@@ -12,7 +12,7 @@ import { API_KEY } from './common.js'
 
 export async function runCli (argv = process.argv) {
   const args = hideBin(argv)
-  const isHelpOrVersion = args.includes('--help') || args.includes('-h') || args.includes('--version')
+  const isHelpOrVersion = args.includes('--help') || args.includes('-h') || args.includes('--version') || args[0] === 'help'
 
   if (!API_KEY && !isHelpOrVersion) {
     console.error('\x1b[31m❌ Error: `JULES_API_KEY` environment variable is not set.\x1b[0m')
@@ -57,6 +57,19 @@ export async function runCli (argv = process.argv) {
   registerReplCommand(parser)
   registerApproveCommand(parser)
   registerSendCommand(parser)
+
+  parser.command(
+    'help [cmd]',
+    'Show help for a command',
+    (y) => y.positional('cmd', { type: 'string', describe: 'Subcommand to display help for' }),
+    async (argv) => {
+      if (argv.cmd) {
+        return runCli([...process.argv.slice(0, 2), argv.cmd, '--help'])
+      } else {
+        return runCli([...process.argv.slice(0, 2), '--help'])
+      }
+    }
+  )
 
   return parser.demandCommand(1, '').strictCommands().help().parse()
 }

@@ -186,6 +186,21 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(out, /--source/)
   })
 
+  test('help subcommand displays main help or subcommand help', async () => {
+    const resMain = await runCli(['help'], { JULES_API_KEY: '' })
+    assert.strictEqual(resMain.code, 0)
+    const outMain = resMain.stdout + resMain.stderr
+    assert.match(outMain, /Jules CLI - AI Session Manager/)
+    assert.match(outMain, /help \[cmd\]/)
+
+    const resSub = await runCli(['help', 'repl'], { JULES_API_KEY: '' })
+    assert.strictEqual(resSub.code, 0)
+    const outSub = resSub.stdout + resSub.stderr
+    assert.match(outSub, /jules repl \[prompt\]/)
+    assert.match(outSub, /Interactive shell to chat with a session/)
+    assert.match(outSub, /-c, --create/)
+  })
+
   test('--help flag displays top-level options including --session and --source', async () => {
     const res = await runCli(['--help'])
     assert.strictEqual(res.code, 0)
