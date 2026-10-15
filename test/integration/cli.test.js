@@ -598,6 +598,43 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /Jules REPL started for session: sessions\/123/)
   })
 
+  test('repl connects to existing session using JULES_SOURCE environment variable', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: {
+        sources: [
+          {
+            name: 'sources/github/owner/repo',
+            githubRepo: { owner: 'owner', repo: 'repo' }
+          }
+        ]
+      }
+    }
+    mockResponses['GET /sessions'] = {
+      status: 200,
+      body: {
+        sessions: [
+          { name: 'sessions/envSource123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', createTime: '2025-01-01T00:00:00Z' }
+        ]
+      }
+    }
+    mockResponses['GET /sessions/envSource123'] = {
+      status: 200,
+      body: { name: 'sessions/envSource123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/envSource123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl'], [
+      { trigger: 'Jules REPL started for session', kill: true }
+    ], { JULES_SOURCE: 'owner/repo' })
+
+    assert.match(stdout, /Connecting to latest session for owner\/repo: sessions\/envSource123/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/envSource123/)
+  })
+
   test('repl --source connects to existing latest session for source', async () => {
     mockResponses['GET /sources'] = {
       status: 200,

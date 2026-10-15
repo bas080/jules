@@ -22,14 +22,15 @@ export async function runCli (argv = process.argv) {
   const parser = yargs(args)
     .scriptName('jules')
     .usage('Jules CLI - AI Session Manager\n\nUsage: $0 <command> [options]')
+    .env('JULES')
     .option('session', {
       alias: 's',
       type: 'string',
-      describe: 'Session ID to target or operate on'
+      describe: 'Session ID to target or operate on (env: JULES_SESSION)'
     })
     .option('source', {
       type: 'string',
-      describe: 'Link or filter by a specific code source (e.g. owner/repo or sources/...)'
+      describe: 'Link or filter by a specific code source (e.g. owner/repo or sources/...) (env: JULES_SOURCE)'
     })
     .option('api-key', {
       type: 'string',
@@ -57,5 +58,5 @@ export async function runCli (argv = process.argv) {
   registerApproveCommand(parser)
   registerSendCommand(parser)
 
-  return parser.demandCommand(1, '').strict().help().parse()
+  return parser.demandCommand(1, '').strictCommands().help().parse()
 }
