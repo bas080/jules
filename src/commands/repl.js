@@ -15,6 +15,7 @@ import {
   handlePollingError,
   readAndFormatLocalFile,
   expandAtFilepaths,
+  formatSourceDisplay,
   loadSessionState,
   saveSessionState,
   renderMarkdown,
@@ -56,14 +57,12 @@ export async function repl (sessionId, options = {}) {
   } else if (!basePromptLabel) {
     try {
       const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
-      let source = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
-      if (source) {
-        if (source.startsWith('sources/github/')) {
-          source = source.replace(/^sources\/github\//, '')
-        } else if (source.startsWith('sources/')) {
-          source = source.replace(/^sources\//, '')
+      const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
+      if (rawSource) {
+        const formatted = formatSourceDisplay(rawSource)
+        if (formatted && formatted !== 'none') {
+          basePromptLabel = formatted
         }
-        basePromptLabel = source
       }
     } catch (err) {
       log(`Failed to fetch session info for prompt source label: ${err.message}`)
@@ -681,7 +680,8 @@ export function registerReplCommand (yargs) {
       const explicitSessionId = argv.session
 
       if (explicitSessionId) {
-        if (argv.source) {
+        const isExplicitSource = process.argv.includes('--source') || process.argv.some(a => a.startsWith('--source='))
+        if (isExplicitSource) {
           console.log('\x1b[33m⚠️ Warning: Specifying `--source` is not necessary when passing an explicit session ID.\x1b[0m')
         }
         await repl(explicitSessionId, argv)
@@ -703,8 +703,10 @@ export function registerReplCommand (yargs) {
         try {
           const sessions = await fetchSessions()
           const matchingSessions = sessions.filter(s => {
-            const sSource = s.sourceContext || s.source || s.sourceId
-            return sSource === fullSourceId || sSource === argv.source
+            const rawSource = s.sourceContext || s.source || s.sourceId
+            const formatted = formatSourceDisplay(rawSource)
+            const sourceStr = typeof rawSource === 'object' ? (rawSource.source || rawSource.name || rawSource.sourceContext) : String(rawSource)
+            return sourceStr === fullSourceId || sourceStr === argv.source || formatted === argv.source || rawSource === fullSourceId || rawSource === argv.source
           })
 
           if (matchingSessions.length === 0) {

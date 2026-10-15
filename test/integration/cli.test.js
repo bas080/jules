@@ -578,7 +578,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /Jules REPL started for session: sessions\/15877429925913768090/)
   })
 
-  test('repl -s 123 --source prints warning and connects to session 123', async () => {
+  test('repl -s 123 --source prints warning when --source is passed on CLI but not when JULES_SOURCE is set in env', async () => {
     mockResponses['GET /sessions/123'] = {
       status: 200,
       body: { name: 'sessions/123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -588,7 +588,8 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       body: { activities: [] }
     }
 
-    const proc = spawn('node', [JULES_BIN, 'repl', '-s', '123', '--source', 'owner/repo'], {
+    // Explicit --source on CLI -> shows warning
+    const procExplicit = spawn('node', [JULES_BIN, 'repl', '-s', '123', '--source', 'owner/repo'], {
       env: {
         ...process.env,
         JULES_API_KEY: 'test-key',
@@ -597,20 +598,39 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       }
     })
 
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
+    let rawStdoutExplicit = ''
+    procExplicit.stdout.on('data', data => {
+      rawStdoutExplicit += data.toString()
+      if (stripAnsi(rawStdoutExplicit).includes('Jules REPL started for session')) {
+        procExplicit.kill('SIGKILL')
+      }
+    })
+    await new Promise(resolve => procExplicit.on('close', resolve))
+    const stdoutExplicit = stripAnsi(rawStdoutExplicit)
+    assert.match(stdoutExplicit, /Warning: Specifying `--source` is not necessary when passing an explicit session ID/)
+
+    // Implicit JULES_SOURCE in env -> no warning
+    const procEnv = spawn('node', [JULES_BIN, 'repl', '-s', '123'], {
+      env: {
+        ...process.env,
+        JULES_API_KEY: 'test-key',
+        JULES_API_URL: serverUrl,
+        JULES_DISABLE_CACHE: 'true',
+        JULES_SOURCE: 'owner/repo'
       }
     })
 
-    await new Promise(resolve => proc.on('close', resolve))
-    const stdout = stripAnsi(rawStdout)
-
-    assert.match(stdout, /Warning: Specifying `--source` is not necessary when passing an explicit session ID/)
-    assert.match(stdout, /Jules REPL started for session: sessions\/123/)
+    let rawStdoutEnv = ''
+    procEnv.stdout.on('data', data => {
+      rawStdoutEnv += data.toString()
+      if (stripAnsi(rawStdoutEnv).includes('Jules REPL started for session')) {
+        procEnv.kill('SIGKILL')
+      }
+    })
+    await new Promise(resolve => procEnv.on('close', resolve))
+    const stdoutEnv = stripAnsi(rawStdoutEnv)
+    assert.doesNotMatch(stdoutEnv, /Warning: Specifying `--source` is not necessary/)
+    assert.match(stdoutEnv, /Jules REPL started for session: sessions\/123/)
   })
 
   test('repl connects to existing session using JULES_SOURCE environment variable', async () => {
