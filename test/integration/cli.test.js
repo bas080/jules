@@ -1427,6 +1427,37 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /web: https:\/\/jules\.google\.com\/session\/status123/)
   })
 
+  test('jules pr command displays PR URL', async () => {
+    mockResponses['GET /sessions/pr123'] = {
+      status: 200,
+      body: {
+        name: 'sessions/pr123',
+        outputs: [{ pullRequest: { url: 'https://github.com/owner/repo/pull/99' } }]
+      }
+    }
+
+    const res = await runCli(['pr', '-s', 'pr123'])
+    assert.strictEqual(res.code, 0)
+    assert.match(res.stdout, /Opening pull request in browser: https:\/\/github\.com\/owner\/repo\/pull\/99/)
+  })
+
+  test('repl /pr command displays PR URL', async () => {
+    mockResponses['GET /sessions/pr123'] = {
+      status: 200,
+      body: {
+        name: 'sessions/pr123',
+        outputs: [{ pullRequest: { url: 'https://github.com/owner/repo/pull/99' } }]
+      }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'pr123'], [
+      { trigger: 'Jules REPL started for session', input: '/pr' },
+      { trigger: 'https://github.com/owner/repo/pull/99', kill: true }
+    ])
+
+    assert.match(stdout, /Opening pull request in browser: https:\/\/github\.com\/owner\/repo\/pull\/99/)
+  })
+
   test('repl /help command displays available REPL slash commands and CLI options', async () => {
     mockResponses['GET /sessions/replHelp123'] = {
       status: 200,

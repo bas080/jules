@@ -235,7 +235,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new', '/pr']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -453,11 +453,58 @@ export async function repl (sessionId, options = {}) {
       }
     }
 
+    if (text === '/pr' || text.startsWith('/pr')) {
+      try {
+        const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+        let prUrl = null
+        if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
+          for (const out of sessionInfo.outputs) {
+            if (out.pullRequest && out.pullRequest.url) {
+              prUrl = out.pullRequest.url
+              break
+            }
+          }
+        }
+
+        if (!prUrl) {
+          try {
+            const activities = await fetchAllActivities(fullSessionId)
+            for (let i = activities.length - 1; i >= 0; i--) {
+              const act = activities[i]
+              if (act.artifacts && Array.isArray(act.artifacts)) {
+                for (const art of act.artifacts) {
+                  if (art.pullRequest && art.pullRequest.url) {
+                    prUrl = art.pullRequest.url
+                    break
+                  }
+                }
+              }
+              if (prUrl) break
+            }
+          } catch (err) {
+            log(`Failed to fetch activities for PR URL: ${err.message}`)
+          }
+        }
+
+        if (prUrl) {
+          console.log(`\x1b[36m🌐 Opening pull request in browser:\x1b[0m ${prUrl}\n`)
+          openUrlInBrowser(prUrl)
+        } else {
+          console.log('\x1b[90mNo pull request URL found for this session.\x1b[0m\n')
+        }
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error fetching PR URL: ${err.message}\x1b[0m`)
+      }
+      rl.prompt()
+      return
+    }
+
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
       console.log('  \x1b[32m/new <msg>\x1b[0m          Start a new session for the same source with initial prompt')
       console.log('  \x1b[32m/archive\x1b[0m           Archive current session and exit REPL')
       console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
+      console.log('  \x1b[32m/pr\x1b[0m                Open related GitHub pull request in browser')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
       console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
