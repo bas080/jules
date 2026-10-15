@@ -1421,9 +1421,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.match(stdout, /Session Status:/)
-    assert.match(stdout, /Title: Fix Auth Bug/)
-    assert.match(stdout, /State: COMPLETED/)
-    assert.match(stdout, /Pull Request: https:\/\/github\.com\/owner\/repo\/pull\/42/)
+    assert.match(stdout, /title: Fix Auth Bug/)
+    assert.match(stdout, /state: COMPLETED/)
+    assert.match(stdout, /pr: https:\/\/github\.com\/owner\/repo\/pull\/42/)
+    assert.match(stdout, /web: https:\/\/jules\.google\.com\/session\/status123/)
   })
 
   test('repl /help command displays available REPL slash commands and CLI options', async () => {

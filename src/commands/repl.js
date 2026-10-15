@@ -260,12 +260,16 @@ export async function repl (sessionId, options = {}) {
       try {
         const cleanId = fullSessionId.replace(/^sessions\//, '')
         const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+        const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
+        const sourceDisplay = formatSourceDisplay(rawSource)
+
         console.log('\n\x1b[1mSession Status:\x1b[0m')
-        console.log(`  \x1b[36mSession ID:\x1b[0m ${fullSessionId}`)
-        if (sessionInfo.title) console.log(`  \x1b[36mTitle:\x1b[0m ${sessionInfo.title}`)
-        if (sessionInfo.state) console.log(`  \x1b[36mState:\x1b[0m ${sessionInfo.state}`)
-        if (sessionInfo.createTime) console.log(`  \x1b[36mCreated:\x1b[0m ${sessionInfo.createTime}`)
-        if (sessionInfo.updateTime) console.log(`  \x1b[36mUpdated:\x1b[0m ${sessionInfo.updateTime}`)
+        console.log(`  \x1b[36msession:\x1b[0m ${fullSessionId}`)
+        if (sourceDisplay && sourceDisplay !== 'none') console.log(`  \x1b[36msource:\x1b[0m ${sourceDisplay}`)
+        if (sessionInfo.title) console.log(`  \x1b[36mtitle:\x1b[0m ${sessionInfo.title}`)
+        if (sessionInfo.state) console.log(`  \x1b[36mstate:\x1b[0m ${sessionInfo.state}`)
+        if (sessionInfo.createTime) console.log(`  \x1b[36mcreated:\x1b[0m ${sessionInfo.createTime}`)
+        if (sessionInfo.updateTime) console.log(`  \x1b[36mupdated:\x1b[0m ${sessionInfo.updateTime}`)
 
         let prUrl = null
         if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
@@ -298,11 +302,11 @@ export async function repl (sessionId, options = {}) {
         }
 
         if (prUrl) {
-          console.log(`  \x1b[32mPull Request:\x1b[0m ${prUrl}`)
+          console.log(`  \x1b[32mpr:\x1b[0m ${prUrl}`)
         } else {
-          console.log('  \x1b[90mPull Request:\x1b[0m None generated yet')
+          console.log('  \x1b[90mpr:\x1b[0m None generated yet')
         }
-        console.log(`  \x1b[36mWeb URL:\x1b[0m https://jules.google.com/session/${cleanId}\n`)
+        console.log(`  \x1b[36mweb:\x1b[0m https://jules.google.com/session/${cleanId}\n`)
       } catch (err) {
         console.error(`\x1b[31m❌ Error fetching session status: ${err.message}\x1b[0m`)
       }
@@ -533,8 +537,9 @@ export async function repl (sessionId, options = {}) {
       const combinedPayload = messageQueue.join('\n\n---\n\n')
       messageQueue.length = 0
       saveQueue(fullSessionId, messageQueue)
-      updatePrompt()
       isBusy = true
+      lastState = 'IN_PROGRESS'
+      updatePrompt()
       try {
         await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: combinedPayload })
         console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
@@ -587,6 +592,8 @@ export async function repl (sessionId, options = {}) {
           console.log('\x1b[33m⏳ Jules is working. File uploaded and queued. (Type /flush to send immediately)\x1b[0m')
         } else {
           isBusy = true
+          lastState = 'IN_PROGRESS'
+          updatePrompt()
           try {
             await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: formatted.trim() })
             console.log('\x1b[90m(File uploaded... Agent is thinking...)\x1b[0m')
@@ -640,6 +647,8 @@ export async function repl (sessionId, options = {}) {
     }
 
     isBusy = true
+    lastState = 'IN_PROGRESS'
+    updatePrompt()
     hasPulledForWork = false
     try {
       await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: promptToSend })
