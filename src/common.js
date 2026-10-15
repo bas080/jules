@@ -378,7 +378,7 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
           const interdiff = getInterdiff(previousPatch, currentPatch, sessionId)
           sessionPatches.set(cleanId, currentPatch)
 
-          if (interdiff) {
+          if (interdiff && interdiff.trim()) {
             console.error('\x1b[36mStep Interdiff:\x1b[0m')
             console.log(renderMarkdown(`\`\`\`diff\n${interdiff}\n\`\`\``))
           }
