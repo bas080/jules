@@ -1443,6 +1443,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
 
     assert.match(stdout, /Available REPL Commands:/)
+    assert.match(stdout, /\/new <msg>/)
     assert.match(stdout, /\/archive/)
     assert.match(stdout, /\/status/)
     assert.match(stdout, /\/upload <filepath>/)
@@ -1453,6 +1454,57 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /\/history \[count\]/)
     assert.match(stdout, /\/flush/)
     assert.match(stdout, /\/help/)
+  })
+
+  test('repl /new <msg> creates new session for same source and launches REPL', async () => {
+    mockResponses['GET /sources'] = {
+      status: 200,
+      body: {
+        sources: [
+          {
+            name: 'sources/github/owner/repo',
+            githubRepo: { owner: 'owner', repo: 'repo', defaultBranch: { displayName: 'main' } }
+          }
+        ]
+      }
+    }
+    mockResponses['GET /sessions/replOld123'] = {
+      status: 200,
+      body: { name: 'sessions/replOld123', sourceContext: 'sources/github/owner/repo', state: 'COMPLETED', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replOld123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions'] = {
+      status: 200,
+      body: { name: 'sessions/replBrandNew456' }
+    }
+    mockResponses['GET /sessions/replBrandNew456'] = {
+      status: 200,
+      body: { name: 'sessions/replBrandNew456', sourceContext: 'sources/github/owner/repo', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/replBrandNew456/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'replOld123'], [
+      { trigger: 'Jules REPL started for session: sessions/replOld123', input: '/new Fix new issue in app' },
+      { trigger: 'Jules REPL started for session: sessions/replBrandNew456', kill: true }
+    ])
+
+    assert.match(stdout, /Starting a new session for the same source\.\.\./)
+    assert.match(stdout, /Session created successfully!/)
+    assert.match(stdout, /Jules REPL started for session: sessions\/replBrandNew456/)
+
+    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
+    assert.ok(postReq)
+    assert.strictEqual(postReq.body.prompt, 'Fix new issue in app')
+    assert.deepStrictEqual(postReq.body.sourceContext, {
+      source: 'sources/github/owner/repo',
+      githubRepoContext: { startingBranch: 'main' }
+    })
   })
 
   test('repl /history command displays recent user prompts', async () => {

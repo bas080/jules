@@ -235,7 +235,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -402,8 +402,60 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text === '/new' || text.startsWith('/new ')) {
+      const match = text.match(/^\/new(?:\s+(.*))?$/)
+      const promptArg = match && match[1] ? match[1].trim() : ''
+
+      if (!promptArg) {
+        console.error('\x1b[31m❌ Error: /new requires a prompt message argument (e.g. /new Fix login bug).\x1b[0m')
+        rl.prompt()
+        return
+      }
+
+      let sourceForNewSession = options.source || null
+      try {
+        const currentSessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+        const rawSource = currentSessionInfo.sourceContext || currentSessionInfo.source || currentSessionInfo.sourceId
+        if (rawSource) {
+          const formatted = formatSourceDisplay(rawSource)
+          if (formatted && formatted !== 'none') {
+            sourceForNewSession = formatted
+          }
+        }
+      } catch (err) {
+        log(`Failed to fetch current session source for /new: ${err.message}`)
+      }
+
+      let expandedPrompt = promptArg
+      try {
+        expandedPrompt = expandAtFilepaths(promptArg)
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
+        rl.prompt()
+        return
+      }
+
+      try {
+        console.log('\n\x1b[36m🚀 Starting a new session for the same source...\x1b[0m')
+        clearTimeout(tailTimeout)
+        rl.removeAllListeners('close')
+        rl.close()
+        process.removeListener('SIGCONT', onSigCont)
+
+        const newOptions = { ...options, source: sourceForNewSession || options.source }
+        const newSessionId = await createSession(expandedPrompt, sourceForNewSession, newOptions)
+        await repl(newSessionId, newOptions)
+        return
+      } catch (err) {
+        console.error(`\x1b[31m❌ Error creating new session: ${err.message}\x1b[0m`)
+        rl.prompt()
+        return
+      }
+    }
+
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
+      console.log('  \x1b[32m/new <msg>\x1b[0m          Start a new session for the same source with initial prompt')
       console.log('  \x1b[32m/archive\x1b[0m           Archive current session and exit REPL')
       console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
