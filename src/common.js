@@ -29,9 +29,13 @@ export function renderMarkdown (mdText) {
   if (!mdText) return ''
   if (!isColorSupported()) return mdText
 
+  const termWidth = process.stdout && process.stdout.columns ? Math.min(process.stdout.columns - 2, 100) : 80
+
   const renderer = new TerminalRenderer({
     showSectionPrefix: false,
-    tab: 2
+    tab: 2,
+    width: termWidth,
+    reflowText: true
   })
 
   marked.setOptions({ renderer })
