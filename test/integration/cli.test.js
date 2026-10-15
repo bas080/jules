@@ -1492,7 +1492,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(postReq.body.prompt, 'contact me at foo@example.com for info')
   })
 
-  test('repl prompt label formats as source:sessionId when source is present and sessionId when source is absent', async () => {
+  test('repl prompt label formats as source when source is present and sessionId when source is absent', async () => {
     mockResponses['GET /sessions/label123'] = {
       status: 200,
       body: { name: 'sessions/label123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1503,10 +1503,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     }
 
     const { stdout } = await runRepl(['repl', '-s', 'label123'], [
-      { trigger: 'owner/repo:label123 ❯', kill: true }
+      { trigger: 'owner/repo', kill: true }
     ])
 
-    assert.match(stdout, /owner\/repo:label123 ❯/)
+    assert.match(stdout, /owner\/repo/)
   })
 
   test('repl /flush command combines queued messages with --- and sends immediately', async () => {
@@ -1526,7 +1526,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     await runRepl(['repl', '-s', 'replFlush123'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued msg 1' },
       { trigger: 'Message queued', input: 'queued msg 2' },
-      { trigger: 'replFlush123 [2] ❯', input: '/flush' },
+      { trigger: '[2]', input: '/flush' },
       { trigger: 'Messages flushed and sent immediately', kill: true }
     ])
 
@@ -1601,7 +1601,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(stdout, /Running 'git pull'/)
   })
 
-  test('repl /rename command renames prompt label and overwrites source:sessionId', async () => {
+  test('repl /rename command renames prompt label and overwrites source', async () => {
     mockResponses['GET /sessions/rename123'] = {
       status: 200,
       body: { name: 'sessions/rename123', sourceContext: 'sources/github/owner/repo', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
@@ -1616,7 +1616,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       { trigger: 'REPL prompt renamed to: custom-session-name', kill: true }
     ])
 
-    assert.match(stdout, /owner\/repo:rename123 ❯/)
+    assert.match(stdout, /owner\/repo/)
     assert.match(stdout, /REPL prompt renamed to: custom-session-name/)
   })
 
@@ -1632,11 +1632,11 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const { stdout } = await runRepl(['repl', '-s', 'name123', '--name', 'my-custom-prompt'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued message test' },
-      { trigger: 'my-custom-prompt [1] ❯', kill: true }
+      { trigger: 'my-custom-prompt [1]', kill: true }
     ])
 
-    assert.match(stdout, /my-custom-prompt ❯/)
-    assert.match(stdout, /my-custom-prompt \[1\] ❯/)
+    assert.match(stdout, /my-custom-prompt/)
+    assert.match(stdout, /my-custom-prompt \[1\]/)
   })
 
   test('repl /queue command lists queued messages', async () => {
@@ -1779,10 +1779,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const { stdout } = await runRepl(['repl', '-s', 'clear123'], [
       { trigger: 'Jules REPL started for session', input: '/clear' },
-      { trigger: 'clear123 ❯', kill: true }
+      { trigger: 'clear123', kill: true }
     ])
 
-    assert.ok(stdout.includes('clear123 ❯'))
+    assert.ok(stdout.includes('clear123'))
   })
 
   test('repl /web command displays opening web URL message', async () => {
@@ -1833,10 +1833,10 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     // Process 2: start REPL again and verify custom prompt label restored
     const { stdout: stdout2 } = await runRepl(['repl', '-s', 'persistedstate123'], [
-      { trigger: 'my-custom-session ❯', kill: true }
+      { trigger: 'my-custom-session', kill: true }
     ])
 
-    assert.match(stdout2, /my-custom-session ❯/)
+    assert.match(stdout2, /my-custom-session/)
 
     if (fs.existsSync(sessionStateFile)) fs.unlinkSync(sessionStateFile)
   })

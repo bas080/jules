@@ -47,13 +47,13 @@ export async function repl (sessionId, options = {}) {
   const shortSessionId = fullSessionId.replace(/^sessions\//, '')
 
   const sessionState = loadSessionState(fullSessionId)
-  let basePromptLabel = sessionState.name || shortSessionId
+  let basePromptLabel = sessionState.name
 
   if (options.name) {
     basePromptLabel = options.name
     sessionState.name = options.name
     saveSessionState(fullSessionId, sessionState)
-  } else if (!sessionState.name) {
+  } else if (!basePromptLabel) {
     try {
       const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
       let source = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
@@ -63,27 +63,30 @@ export async function repl (sessionId, options = {}) {
         } else if (source.startsWith('sources/')) {
           source = source.replace(/^sources\//, '')
         }
-        basePromptLabel = `${source}:${shortSessionId}`
+        basePromptLabel = source
       }
     } catch (err) {
       log(`Failed to fetch session info for prompt source label: ${err.message}`)
     }
+    if (!basePromptLabel) {
+      basePromptLabel = shortSessionId
+    }
   }
 
-  const promptColors = {
-    green: '\x1b[32m',
-    cyan: '\x1b[36m',
-    blue: '\x1b[34m',
-    yellow: '\x1b[33m',
-    magenta: '\x1b[35m',
-    red: '\x1b[31m',
-    white: '\x1b[37m',
+  const bgColors = {
+    green: '\x1b[42m\x1b[30m',
+    cyan: '\x1b[46m\x1b[30m',
+    blue: '\x1b[44m\x1b[37m',
+    yellow: '\x1b[43m\x1b[30m',
+    magenta: '\x1b[45m\x1b[37m',
+    red: '\x1b[41m\x1b[37m',
+    white: '\x1b[47m\x1b[30m',
     reset: '\x1b[0m',
     none: '\x1b[0m',
-    default: '\x1b[32m'
+    default: '\x1b[42m\x1b[30m'
   }
 
-  let promptColorCode = promptColors[sessionState.color] || '\x1b[32m'
+  let promptColorCode = bgColors[sessionState.color] || bgColors.default
 
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`)
   console.log('\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n')
@@ -95,10 +98,22 @@ export async function repl (sessionId, options = {}) {
 
   let isBusy = false
   const messageQueue = sessionState.queue
+  let lastSeenActivityIndex = -1
+  let lastState = null
+  let lastUpdateTime = null
+
+  function getStatusIcon () {
+    if (isBusy || lastState === 'IN_PROGRESS' || lastState === 'ACTIVE') return '⚙'
+    if (lastState === 'COMPLETED') return '✔'
+    if (lastState === 'FAILED') return '✖'
+    if (lastState === 'CANCELLED') return '⏹'
+    return '✎'
+  }
 
   function getPromptString () {
+    const icon = getStatusIcon()
     const queueSuffix = messageQueue.length > 0 ? ` [${messageQueue.length}]` : ''
-    return `${promptColorCode}${basePromptLabel}${queueSuffix} ❯ \x1b[0m`
+    return `${promptColorCode} ${icon} ${basePromptLabel}${queueSuffix} \x1b[0m `
   }
 
   const rl = readline.createInterface({
@@ -129,10 +144,6 @@ export async function repl (sessionId, options = {}) {
   process.on('SIGCONT', onSigCont)
 
   rl.prompt()
-
-  let lastSeenActivityIndex = -1
-  let lastState = null
-  let lastUpdateTime = null
 
   async function flushQueue () {
     if (messageQueue.length > 0 && !isBusy) {
@@ -387,26 +398,13 @@ export async function repl (sessionId, options = {}) {
       const parts = text.split(/\s+/).filter(Boolean)
       const colorArg = parts[1] ? parts[1].toLowerCase() : ''
 
-      const colors = {
-        green: '\x1b[32m',
-        cyan: '\x1b[36m',
-        blue: '\x1b[34m',
-        yellow: '\x1b[33m',
-        magenta: '\x1b[35m',
-        red: '\x1b[31m',
-        white: '\x1b[37m',
-        reset: '\x1b[0m',
-        none: '\x1b[0m',
-        default: '\x1b[32m'
-      }
-
-      if (!colorArg || !colors[colorArg]) {
+      if (!colorArg || !bgColors[colorArg]) {
         console.error('\x1b[31m❌ Error: Please specify a valid color: green, cyan, blue, yellow, magenta, red, white, default, reset.\x1b[0m')
         rl.prompt()
         return
       }
 
-      promptColorCode = colors[colorArg]
+      promptColorCode = bgColors[colorArg]
       sessionState.color = colorArg
       saveSessionState(fullSessionId, sessionState)
       updatePrompt()
