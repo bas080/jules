@@ -26,6 +26,7 @@ import { createSession } from './create.js'
 import { archiveSession } from './cleanup.js'
 
 export async function repl (sessionId, options = {}) {
+  process.title = 'jules-repl'
   let hasPulledForWork = false
   let targetSessionId = sessionId
 

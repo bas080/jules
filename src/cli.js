@@ -11,6 +11,7 @@ import { registerSendCommand } from './commands/send.js'
 import { fetchSessions, apiRequest, fetchAllActivities, openUrlInBrowser, log, API_KEY } from './common.js'
 
 export async function runCli (argv = process.argv) {
+  process.title = 'jules'
   const args = hideBin(argv)
   const isHelpOrVersion = args.includes('--help') || args.includes('-h') || args.includes('--version') || args[0] === 'help'
 

@@ -1,6 +1,7 @@
 import { fetchSessions, apiRequest, fetchAllActivities, printActivity, isRateLimitError, handlePollingError, sendDesktopNotification, formatSourceDisplay } from '../common.js'
 
 export async function tail (sessionId, options = {}) {
+  process.title = 'jules-tail'
   const fullSessionId = sessionId.startsWith('sessions/') ? sessionId : `sessions/${sessionId}`
   console.error(`\x1b[36mTailing session:\x1b[0m ${fullSessionId}...\n`)
 
