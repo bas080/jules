@@ -1,4 +1,4 @@
-import { fetchSessions, apiRequest, fetchAllActivities, printActivity, isRateLimitError, handlePollingError } from '../common.js'
+import { fetchSessions, apiRequest, fetchAllActivities, printActivity, isRateLimitError, handlePollingError, sendDesktopNotification, formatSourceDisplay } from '../common.js'
 
 export async function tail (sessionId, options = {}) {
   const fullSessionId = sessionId.startsWith('sessions/') ? sessionId : `sessions/${sessionId}`
@@ -17,7 +17,16 @@ export async function tail (sessionId, options = {}) {
 
       if (session.state !== lastState) {
         process.stderr.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`)
+        const wasWorking = (lastState === 'IN_PROGRESS' || lastState === 'ACTIVE')
         lastState = session.state
+        if (wasWorking && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED')) {
+          const sessionLabel = formatSourceDisplay(session.sourceContext || session.source) || fullSessionId.replace(/^sessions\//, '')
+          sendDesktopNotification(
+            `Jules AI (${sessionLabel})`,
+            `Jules is now ${session.state.toLowerCase().replace(/_/g, ' ')}.`,
+            options
+          )
+        }
       }
 
       if (session.updateTime !== lastUpdateTime) {
@@ -57,6 +66,7 @@ export function registerTailCommand (yargs) {
         .positional('sessionId', { type: 'string', describe: 'Session ID to tail' })
         .option('history', { type: 'boolean', describe: 'Fetch and print full activity history on startup' })
         .option('git-patch', { type: 'boolean', describe: 'Automatically apply received git patches to repository' })
+        .option('notify', { type: 'boolean', default: true, describe: 'Send desktop notifications when Jules becomes idle or requires input' })
     },
     async (argv) => {
       let targetSessionId = argv.session || argv.sessionId

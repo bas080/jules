@@ -2015,4 +2015,44 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     ])
     assert.match(resHistory.stdout, /Past history message/)
   })
+
+  test('repl /notify command toggles notification status', async () => {
+    mockResponses['GET /sessions/notify123'] = {
+      status: 200,
+      body: { name: 'sessions/notify123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/notify123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'notify123'], [
+      { trigger: 'Jules REPL started for session', input: '/notify off' },
+      { trigger: 'Desktop notifications disabled', input: '/notify status' },
+      { trigger: 'Desktop notifications status: disabled', input: '/notify on' },
+      { trigger: 'Desktop notifications enabled', kill: true }
+    ])
+
+    assert.match(stdout, /Desktop notifications disabled/)
+    assert.match(stdout, /Desktop notifications status: disabled/)
+    assert.match(stdout, /Desktop notifications enabled/)
+  })
+
+  test('repl --no-notify flag disables notifications in options', async () => {
+    mockResponses['GET /sessions/nonotify123'] = {
+      status: 200,
+      body: { name: 'sessions/nonotify123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/nonotify123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'nonotify123', '--no-notify'], [
+      { trigger: 'Jules REPL started for session', input: '/notify status' },
+      { trigger: 'Desktop notifications status: disabled', kill: true }
+    ])
+
+    assert.match(stdout, /Desktop notifications status: disabled/)
+  })
 })

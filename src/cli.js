@@ -48,6 +48,11 @@ export async function runCli (argv = process.argv) {
       type: 'number',
       describe: 'Background polling delay in milliseconds (env: JULES_POLL_INTERVAL)'
     })
+    .option('notify', {
+      type: 'boolean',
+      default: true,
+      describe: 'Send desktop notifications when Jules becomes idle or requires input (env: JULES_NOTIFY)'
+    })
 
   registerSessionsCommand(parser)
   registerSourcesCommand(parser)
