@@ -20,6 +20,7 @@ import {
   saveSessionState,
   renderMarkdown,
   sessionPatches,
+  sendDesktopNotification,
   log
 } from '../common.js'
 import { createSession } from './create.js'
@@ -122,7 +123,19 @@ export async function repl (sessionId, options = {}) {
   })
 
   function updatePrompt () {
-    rl.setPrompt(getPromptString())
+    if (!rl.closed) {
+      try {
+        rl.setPrompt(getPromptString())
+      } catch (e) {}
+    }
+  }
+
+  function safePrompt (preserveCursor) {
+    if (!rl.closed) {
+      try {
+        rl.prompt(preserveCursor)
+      } catch (e) {}
+    }
   }
 
   const onSigCont = () => {
@@ -131,9 +144,11 @@ export async function repl (sessionId, options = {}) {
         process.stdin.setRawMode(true)
       }
       process.stdin.resume()
-      rl.resume()
-      updatePrompt()
-      rl.prompt(true)
+      if (!rl.closed) {
+        rl.resume()
+        updatePrompt()
+        safePrompt(true)
+      }
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(poll, 50)
     } catch (err) {
@@ -170,13 +185,21 @@ export async function repl (sessionId, options = {}) {
       const session = await apiRequest(fullSessionId, 'GET', null, true)
       if (session.state !== lastState) {
         process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`)
+        const wasWorking = (lastState === 'IN_PROGRESS' || lastState === 'ACTIVE')
         lastState = session.state
         if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED') {
           isBusy = false
+          if (wasWorking && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED')) {
+            sendDesktopNotification(
+              `Jules AI (${basePromptLabel})`,
+              `Jules is now ${session.state.toLowerCase().replace(/_/g, ' ')}.`,
+              options
+            )
+          }
         } else if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE') {
           isBusy = true
         }
-        rl.prompt(true)
+        safePrompt(true)
       }
 
       if (session.updateTime !== lastUpdateTime) {
@@ -193,7 +216,7 @@ export async function repl (sessionId, options = {}) {
             }
           }
           lastSeenActivityIndex = activities.length - 1
-          rl.prompt(true)
+          safePrompt(true)
         }
         lastUpdateTime = session.updateTime
 
@@ -219,10 +242,12 @@ export async function repl (sessionId, options = {}) {
         currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000)
       }
       handlePollingError(err, 'REPL background loop')
-      rl.prompt(true)
+      safePrompt(true)
     }
 
-    tailTimeout = setTimeout(poll, currentPollInterval)
+    if (!rl.closed) {
+      tailTimeout = setTimeout(poll, currentPollInterval)
+    }
   }
 
   let tailTimeout = setTimeout(poll, 0)
@@ -235,7 +260,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new', '/pr']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -499,12 +524,36 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text === '/notify' || text.startsWith('/notify')) {
+      const parts = text.split(/\s+/).filter(Boolean)
+      const arg = parts[1] ? parts[1].toLowerCase() : ''
+
+      if (arg === 'on' || arg === 'true' || arg === 'enable') {
+        options.notify = true
+        console.error('\x1b[32m✔ Desktop notifications enabled.\x1b[0m')
+      } else if (arg === 'off' || arg === 'false' || arg === 'disable') {
+        options.notify = false
+        console.error('\x1b[32m✔ Desktop notifications disabled.\x1b[0m')
+      } else if (arg === 'status') {
+        const isEnabled = options.notify !== false && process.env.JULES_NOTIFY !== 'false' && process.env.JULES_NOTIFY !== '0'
+        console.log(`\x1b[36mDesktop notifications status:\x1b[0m ${isEnabled ? 'enabled' : 'disabled'}`)
+      } else if (!arg) {
+        options.notify = !(options.notify !== false)
+        console.error(`\x1b[32m✔ Desktop notifications ${options.notify ? 'enabled' : 'disabled'}.\x1b[0m`)
+      } else {
+        console.error('\x1b[31m❌ Error: Invalid argument for /notify. Usage: /notify [on|off|status]\x1b[0m')
+      }
+      safePrompt()
+      return
+    }
+
     if (text.startsWith('/help')) {
       console.log('\n\x1b[1mAvailable REPL Commands:\x1b[0m')
       console.log('  \x1b[32m/new <msg>\x1b[0m          Start a new session for the same source with initial prompt')
       console.log('  \x1b[32m/archive\x1b[0m           Archive current session and exit REPL')
       console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
       console.log('  \x1b[32m/pr\x1b[0m                Open related GitHub pull request in browser')
+      console.log('  \x1b[32m/notify [on|off]\x1b[0m   Toggle or set desktop notification status')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
       console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
@@ -788,6 +837,7 @@ export function registerReplCommand (yargs) {
         .option('history', { type: 'boolean', describe: 'Fetch and print full activity history on startup' })
         .option('git-pull', { type: 'boolean', describe: "Automatically run 'git pull' before starting the REPL" })
         .option('git-patch', { type: 'boolean', describe: 'Automatically apply received git patches to repository' })
+        .option('notify', { type: 'boolean', default: true, describe: 'Send desktop notifications when Jules becomes idle or requires input' })
     },
     async (argv) => {
       if (argv.create) {
