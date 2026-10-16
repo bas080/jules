@@ -14,7 +14,6 @@ import {
   isRateLimitError,
   handlePollingError,
   readAndFormatLocalFile,
-  expandAtFilepaths,
   formatSourceDisplay,
   loadSessionState,
   saveSessionState,
@@ -451,15 +450,6 @@ export async function repl (sessionId, options = {}) {
         log(`Failed to fetch current session source for /new: ${err.message}`)
       }
 
-      let expandedPrompt = promptArg
-      try {
-        expandedPrompt = expandAtFilepaths(promptArg)
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-        rl.prompt()
-        return
-      }
-
       try {
         console.log('\n\x1b[36m🚀 Starting a new session for the same source...\x1b[0m')
         clearTimeout(tailTimeout)
@@ -468,7 +458,7 @@ export async function repl (sessionId, options = {}) {
         process.removeListener('SIGCONT', onSigCont)
 
         const newOptions = { ...options, source: sourceForNewSession || options.source }
-        const newSessionId = await createSession(expandedPrompt, sourceForNewSession, newOptions)
+        const newSessionId = await createSession(promptArg, sourceForNewSession, newOptions)
         await repl(newSessionId, newOptions)
         return
       } catch (err) {
@@ -565,8 +555,7 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately')
       console.log('  \x1b[32m/clear\x1b[0m              Clear terminal screen')
       console.log('  \x1b[32m/web\x1b[0m                Open session URL in web browser')
-      console.log('  \x1b[32m/help\x1b[0m               Display this help message')
-      console.log('  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n')
+      console.log('  \x1b[32m/help\x1b[0m               Display this help message\n')
       rl.prompt()
       return
     }
@@ -665,15 +654,7 @@ export async function repl (sessionId, options = {}) {
       const inlineMsg = match && match[1] ? match[1].trim() : ''
 
       if (inlineMsg) {
-        let expandedMsg = inlineMsg
-        try {
-          expandedMsg = expandAtFilepaths(inlineMsg)
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-          rl.prompt()
-          return
-        }
-        messageQueue.push(expandedMsg)
+        messageQueue.push(inlineMsg)
       }
 
       if (messageQueue.length === 0) {
@@ -761,14 +742,7 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
-    let promptToSend = text
-    try {
-      promptToSend = expandAtFilepaths(text)
-    } catch (err) {
-      console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-      rl.prompt()
-      return
-    }
+    const promptToSend = text
 
     if (isBusy || messageQueue.length > 0) {
       messageQueue.push(promptToSend)
@@ -823,7 +797,7 @@ export async function repl (sessionId, options = {}) {
 export function registerReplCommand (yargs) {
   return yargs.command(
     'repl [prompt]',
-    'Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)',
+    'Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help)',
     (y) => {
       return y
         .positional('prompt', { type: 'string', describe: 'Initial prompt when creating a session' })
@@ -849,14 +823,7 @@ export function registerReplCommand (yargs) {
           console.error('\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m')
           process.exit(1)
         }
-        let initialPrompt = argv.prompt
-        try {
-          initialPrompt = expandAtFilepaths(argv.prompt)
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-          process.exit(1)
-        }
-        const newSessionId = await createSession(initialPrompt, argv.source, argv)
+        const newSessionId = await createSession(argv.prompt, argv.source, argv)
         await repl(newSessionId, argv)
         return
       }

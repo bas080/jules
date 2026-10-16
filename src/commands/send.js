@@ -3,7 +3,6 @@ import {
   fetchAllActivities,
   printActivity,
   readStdin,
-  expandAtFilepaths,
   isRateLimitError,
   handlePollingError
 } from '../common.js'
@@ -100,7 +99,7 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
 export function registerSendCommand (yargs) {
   return yargs.command(
     'send [message]',
-    'Send a message to a session and tail until status is done/completed (supports stdin and @filepath)',
+    'Send a message to a session and tail until status is done/completed (supports stdin)',
     (y) => {
       return y
         .positional('message', { type: 'string', describe: 'Message prompt to send' })
@@ -118,12 +117,6 @@ export function registerSendCommand (yargs) {
       }
       if (!promptText) {
         console.error('\x1b[31m❌ Error: A message or stdin input is required for send command.\x1b[0m')
-        process.exit(1)
-      }
-      try {
-        promptText = expandAtFilepaths(promptText)
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
         process.exit(1)
       }
       await sendMessageAndTail(argv.session, promptText, argv)

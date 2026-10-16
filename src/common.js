@@ -96,44 +96,6 @@ export function readAndFormatLocalFile (filepath) {
   return `\n\n--- File: ${filepath} ---\n${content}\n`
 }
 
-export function expandAtFilepaths (promptText) {
-  if (!promptText) return promptText
-
-  const tokens = promptText.match(/@\S+/g)
-  if (!tokens || tokens.length === 0) return promptText
-
-  let result = promptText
-  const attachedFiles = new Set()
-
-  for (const token of tokens) {
-    const candidatePath = token.slice(1)
-    if (!candidatePath || candidatePath.includes('@')) continue
-
-    if (/\w+@\w+\.\w+/.test(promptText)) {
-      const emailMatch = promptText.match(/(\w+@\w+\.\w+)/)
-      if (emailMatch && emailMatch[0].endsWith(`@${candidatePath}`)) {
-        continue
-      }
-    }
-
-    const resolved = path.resolve(candidatePath)
-    if (fs.existsSync(resolved)) {
-      if (fs.statSync(resolved).isDirectory()) continue
-      if (!attachedFiles.has(resolved)) {
-        attachedFiles.add(resolved)
-        const attachmentText = readAndFormatLocalFile(candidatePath)
-        result += attachmentText
-      }
-    } else {
-      if (candidatePath.includes('/') || candidatePath.includes('\\') || candidatePath.includes('.')) {
-        throw new Error(`File not found: ${candidatePath}`)
-      }
-    }
-  }
-
-  return result
-}
-
 export async function readStdin () {
   return new Promise((resolve) => {
     let data = ''
