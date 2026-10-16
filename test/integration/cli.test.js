@@ -1292,6 +1292,10 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
         title: 'Fix Auth Bug',
         state: 'COMPLETED',
         createTime: '2025-01-01T00:00:00Z',
+        sourceContext: {
+          source: 'sources/github/owner/repo',
+          githubRepoContext: { startingBranch: 'main' }
+        },
         outputs: [
           { pullRequest: { url: 'https://github.com/owner/repo/pull/42' } }
         ]
@@ -1304,6 +1308,8 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     ])
 
     assert.match(stdout, /Session Status:/)
+    assert.match(stdout, /source: owner\/repo/)
+    assert.match(stdout, /branch: main/)
     assert.match(stdout, /title: Fix Auth Bug/)
     assert.match(stdout, /state: COMPLETED/)
     assert.match(stdout, /pr: https:\/\/github\.com\/owner\/repo\/pull\/42/)

@@ -287,9 +287,17 @@ export async function repl (sessionId, options = {}) {
         const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
         const sourceDisplay = formatSourceDisplay(rawSource)
 
+        let branch = null
+        if (sessionInfo.sourceContext && sessionInfo.sourceContext.githubRepoContext && sessionInfo.sourceContext.githubRepoContext.startingBranch) {
+          branch = sessionInfo.sourceContext.githubRepoContext.startingBranch
+        } else if (sessionInfo.startingBranch) {
+          branch = sessionInfo.startingBranch
+        }
+
         console.log('\n\x1b[1mSession Status:\x1b[0m')
         console.log(`  \x1b[36msession:\x1b[0m ${fullSessionId}`)
         if (sourceDisplay && sourceDisplay !== 'none') console.log(`  \x1b[36msource:\x1b[0m ${sourceDisplay}`)
+        if (branch) console.log(`  \x1b[36mbranch:\x1b[0m ${branch}`)
         if (sessionInfo.title) console.log(`  \x1b[36mtitle:\x1b[0m ${sessionInfo.title}`)
         if (sessionInfo.state) console.log(`  \x1b[36mstate:\x1b[0m ${sessionInfo.state}`)
         if (sessionInfo.createTime) console.log(`  \x1b[36mcreated:\x1b[0m ${sessionInfo.createTime}`)
