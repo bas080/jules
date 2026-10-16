@@ -1,4 +1,4 @@
-import { fetchSources, apiRequest, log, expandAtFilepaths } from '../common.js'
+import { fetchSources, apiRequest, log } from '../common.js'
 import { repl } from './repl.js'
 
 export async function createSession (prompt, sourceId = null, options = {}) {
@@ -81,7 +81,7 @@ export async function createSession (prompt, sourceId = null, options = {}) {
 export function registerCreateCommand (yargs) {
   return yargs.command(
     'create <prompt>',
-    'Start a new session with an initial prompt (supports @filepath)',
+    'Start a new session with an initial prompt',
     (y) => {
       return y
         .positional('prompt', { type: 'string', describe: 'Initial prompt for the session' })
@@ -92,14 +92,7 @@ export function registerCreateCommand (yargs) {
         .option('plan-approval', { type: 'boolean', default: true, describe: 'Require explicit plan approval before agent starts work (use --no-plan-approval to disable)' })
     },
     async (argv) => {
-      let finalPrompt = argv.prompt
-      try {
-        finalPrompt = expandAtFilepaths(argv.prompt)
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-        process.exit(1)
-      }
-      const newSessionId = await createSession(finalPrompt, argv.source, argv)
+      const newSessionId = await createSession(argv.prompt, argv.source, argv)
       await repl(newSessionId, argv)
     }
   )
