@@ -304,6 +304,8 @@ export async function repl (sessionId, options = {}) {
         if (sessionInfo.updateTime) console.log(`  \x1b[36mupdated:\x1b[0m ${sessionInfo.updateTime}`)
 
         let prUrl = null
+        let lastUserMessage = null
+
         if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
           for (const out of sessionInfo.outputs) {
             if (out.pullRequest && out.pullRequest.url) {
@@ -313,26 +315,28 @@ export async function repl (sessionId, options = {}) {
           }
         }
 
-        if (!prUrl) {
-          try {
-            const activities = await fetchAllActivities(fullSessionId)
-            for (let i = activities.length - 1; i >= 0; i--) {
-              const act = activities[i]
-              if (act.artifacts && Array.isArray(act.artifacts)) {
-                for (const art of act.artifacts) {
-                  if (art.pullRequest && art.pullRequest.url) {
-                    prUrl = art.pullRequest.url
-                    break
-                  }
+        try {
+          const activities = await fetchAllActivities(fullSessionId)
+          for (let i = activities.length - 1; i >= 0; i--) {
+            const act = activities[i]
+            if (!lastUserMessage && act.userMessaged && act.userMessaged.userMessage) {
+              lastUserMessage = act.userMessaged.userMessage.trim()
+            }
+            if (!prUrl && act.artifacts && Array.isArray(act.artifacts)) {
+              for (const art of act.artifacts) {
+                if (art.pullRequest && art.pullRequest.url) {
+                  prUrl = art.pullRequest.url
+                  break
                 }
               }
-              if (prUrl) break
             }
-          } catch (err) {
-            log(`Failed to fetch activities for PR URL: ${err.message}`)
+            if (prUrl && lastUserMessage) break
           }
+        } catch (err) {
+          log(`Failed to fetch activities for /status: ${err.message}`)
         }
 
+        if (lastUserMessage) console.log(`  \x1b[36mlast message:\x1b[0m "${lastUserMessage}"`)
         if (prUrl) {
           console.log(`  \x1b[32mpr:\x1b[0m ${prUrl}`)
         } else {

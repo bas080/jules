@@ -1301,6 +1301,18 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
         ]
       }
     }
+    mockResponses['GET /sessions/status123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'userMessaged',
+            userMessaged: { userMessage: 'Fix login issue' }
+          }
+        ]
+      }
+    }
 
     const { stdout } = await runRepl(['repl', '-s', 'status123'], [
       { trigger: 'Jules REPL started for session', input: '/status' },
@@ -1312,6 +1324,7 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     assert.match(stdout, /branch: main/)
     assert.match(stdout, /title: Fix Auth Bug/)
     assert.match(stdout, /state: COMPLETED/)
+    assert.match(stdout, /last message: "Fix login issue"/)
     assert.match(stdout, /pr: https:\/\/github\.com\/owner\/repo\/pull\/42/)
     assert.match(stdout, /web: https:\/\/jules\.google\.com\/session\/status123/)
   })
