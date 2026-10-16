@@ -1319,14 +1319,14 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
       { trigger: 'https://github.com/owner/repo/pull/42', kill: true }
     ])
 
-    assert.match(stdout, /Session Status:/)
-    assert.match(stdout, /source: owner\/repo/)
-    assert.match(stdout, /branch: main/)
-    assert.match(stdout, /title: Fix Auth Bug/)
-    assert.match(stdout, /state: COMPLETED/)
-    assert.match(stdout, /last message: "Fix login issue"/)
-    assert.match(stdout, /pr: https:\/\/github\.com\/owner\/repo\/pull\/42/)
-    assert.match(stdout, /web: https:\/\/jules\.google\.com\/session\/status123/)
+    assert.match(stdout, /Session Status/)
+    assert.match(stdout, /owner\/repo/)
+    assert.match(stdout, /main/)
+    assert.match(stdout, /Fix Auth Bug/)
+    assert.match(stdout, /COMPLETED/)
+    assert.match(stdout, /Fix login issue/)
+    assert.match(stdout, /https:\/\/github\.com\/owner\/repo\/pull\/42/)
+    assert.match(stdout, /https:\/\/jules\.google\.com\/session\/status123/)
   })
 
   test('jules pr command displays PR URL', async () => {

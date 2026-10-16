@@ -295,15 +295,6 @@ export async function repl (sessionId, options = {}) {
           branch = sessionInfo.startingBranch
         }
 
-        console.log('\n\x1b[1mSession Status:\x1b[0m')
-        console.log(`  \x1b[36msession:\x1b[0m ${fullSessionId}`)
-        if (sourceDisplay && sourceDisplay !== 'none') console.log(`  \x1b[36msource:\x1b[0m ${sourceDisplay}`)
-        if (branch) console.log(`  \x1b[36mbranch:\x1b[0m ${branch}`)
-        if (sessionInfo.title) console.log(`  \x1b[36mtitle:\x1b[0m ${sessionInfo.title}`)
-        if (sessionInfo.state) console.log(`  \x1b[36mstate:\x1b[0m ${sessionInfo.state}`)
-        if (sessionInfo.createTime) console.log(`  \x1b[36mcreated:\x1b[0m ${sessionInfo.createTime}`)
-        if (sessionInfo.updateTime) console.log(`  \x1b[36mupdated:\x1b[0m ${sessionInfo.updateTime}`)
-
         let prUrl = null
         let lastUserMessage = null
 
@@ -324,7 +315,7 @@ export async function repl (sessionId, options = {}) {
               lastUserMessage = act.userMessaged.userMessage.trim()
             }
             if (!prUrl && act.artifacts && Array.isArray(act.artifacts)) {
-              for (const art of act.artifacts) {
+              for (const art of art.artifacts) {
                 if (art.pullRequest && art.pullRequest.url) {
                   prUrl = art.pullRequest.url
                   break
@@ -337,13 +328,21 @@ export async function repl (sessionId, options = {}) {
           log(`Failed to fetch activities for /status: ${err.message}`)
         }
 
-        if (lastUserMessage) console.log(`  \x1b[36mlast message:\x1b[0m "${lastUserMessage}"`)
-        if (prUrl) {
-          console.log(`  \x1b[32mpr:\x1b[0m ${prUrl}`)
-        } else {
-          console.log('  \x1b[90mpr:\x1b[0m None generated yet')
-        }
-        console.log(`  \x1b[36mweb:\x1b[0m https://jules.google.com/session/${cleanId}\n`)
+        let statusMd = '# Session Status\n\n'
+        statusMd += '| Property | Value |\n| --- | --- |\n'
+        statusMd += `| **session** | ${fullSessionId} |\n`
+        if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${sourceDisplay} |\n`
+        if (branch) statusMd += `| **branch** | ${branch} |\n`
+        if (sessionInfo.title) statusMd += `| **title** | ${sessionInfo.title} |\n`
+        if (sessionInfo.state) statusMd += `| **state** | ${sessionInfo.state} |\n`
+        if (lastUserMessage) statusMd += `| **last message** | ${lastUserMessage.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`
+        if (sessionInfo.createTime) statusMd += `| **created** | ${sessionInfo.createTime} |\n`
+        if (sessionInfo.updateTime) statusMd += `| **updated** | ${sessionInfo.updateTime} |\n`
+        if (prUrl) statusMd += `| **pr** | ${prUrl} |\n`
+        else statusMd += '| **pr** | None generated yet |\n'
+        statusMd += `| **web** | https://jules.google.com/session/${cleanId} |\n`
+
+        console.log(`\n${renderMarkdown(statusMd)}\n`)
       } catch (err) {
         console.error(`\x1b[31m❌ Error fetching session status: ${err.message}\x1b[0m`)
       }
