@@ -164,9 +164,10 @@ export async function repl (sessionId, options = {}) {
       const combinedPayload = messageQueue.join('\n\n---\n\n')
       messageQueue.length = 0
       saveQueue(fullSessionId, messageQueue)
+      isBusy = true
+      lastState = 'IN_PROGRESS'
       updatePrompt()
       console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
-      isBusy = true
       try {
         await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: combinedPayload })
         console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m')
@@ -315,7 +316,7 @@ export async function repl (sessionId, options = {}) {
               lastUserMessage = act.userMessaged.userMessage.trim()
             }
             if (!prUrl && act.artifacts && Array.isArray(act.artifacts)) {
-              for (const art of art.artifacts) {
+              for (const art of act.artifacts) {
                 if (art.pullRequest && art.pullRequest.url) {
                   prUrl = art.pullRequest.url
                   break
