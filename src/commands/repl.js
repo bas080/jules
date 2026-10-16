@@ -239,7 +239,7 @@ export async function repl (sessionId, options = {}) {
       currentPollInterval = basePollInterval
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000)
+        currentPollInterval = Math.min(currentPollInterval * 2, 30000)
       }
       handlePollingError(err, 'REPL background loop')
       safePrompt(true)
