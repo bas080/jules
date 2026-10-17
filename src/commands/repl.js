@@ -101,6 +101,23 @@ export async function repl (sessionId, options = {}) {
   let lastSeenActivityIndex = -1
   let lastState = null
   let lastUpdateTime = null
+  let idlePollCount = 0
+  let isPollingPaused = false
+  const maxIdlePolls = 20
+
+  function resumePolling () {
+    idlePollCount = 0
+    if (isPollingPaused) {
+      isPollingPaused = false
+      clearTimeout(tailTimeout)
+      tailTimeout = setTimeout(poll, 0)
+    }
+  }
+
+  const onStdinData = () => {
+    resumePolling()
+  }
+  process.stdin.on('data', onStdinData)
 
   function getStatusIcon () {
     if (isBusy || lastState === 'IN_PROGRESS' || lastState === 'ACTIVE') return '⚙'
@@ -204,6 +221,7 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (session.updateTime !== lastUpdateTime) {
+        idlePollCount = 0
         const activities = await fetchAllActivities(fullSessionId)
 
         if (lastSeenActivityIndex === -1 && !options.history) {
@@ -237,6 +255,16 @@ export async function repl (sessionId, options = {}) {
         isBusy = false
         await flushQueue()
       }
+
+      if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
+        idlePollCount++
+        if (idlePollCount >= maxIdlePolls) {
+          isPollingPaused = true
+          log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
+          return
+        }
+      }
+
       currentPollInterval = basePollInterval
     } catch (err) {
       if (isRateLimitError(err)) {
@@ -254,6 +282,7 @@ export async function repl (sessionId, options = {}) {
   let tailTimeout = setTimeout(poll, 0)
 
   rl.on('line', async (line) => {
+    resumePolling()
     const text = line.trim()
     if (!text) {
       rl.prompt()
@@ -801,6 +830,7 @@ export async function repl (sessionId, options = {}) {
 
   rl.on('close', () => {
     console.log('')
+    process.stdin.removeListener('data', onStdinData)
     process.removeListener('SIGCONT', onSigCont)
     clearTimeout(tailTimeout)
     process.exit(0)
