@@ -129,7 +129,9 @@ export async function repl (sessionId, options = {}) {
     if (wasPaused) {
       isPollingPaused = false
       lastUpdateTime = null
-      console.log('\n\x1b[36m⏰ Activity detected. Waking up and checking for session updates...\x1b[0m')
+      printAbovePrompt(() => {
+        console.log('\n\x1b[36m⏰ Activity detected. Waking up and checking for session updates...\x1b[0m')
+      })
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(poll, 0)
     }
@@ -166,6 +168,24 @@ export async function repl (sessionId, options = {}) {
         rl.setPrompt(getPromptString())
       } catch (e) {}
     }
+  }
+
+  function printAbovePrompt (logFn) {
+    if (!rl.closed) {
+      try {
+        if (process.stdout.isTTY) {
+          readline.clearLine(process.stdout, 0)
+          readline.cursorTo(process.stdout, 0)
+        } else {
+          process.stdout.write('\r\x1b[K')
+        }
+      } catch (e) {}
+    }
+    if (typeof logFn === 'function') {
+      logFn()
+    }
+    updatePrompt()
+    safePrompt(true)
   }
 
   function safePrompt (preserveCursor) {
@@ -235,12 +255,18 @@ export async function repl (sessionId, options = {}) {
       lastState = 'IN_PROGRESS'
       lastMessageSentTime = Date.now()
       updatePrompt()
-      console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
+      printAbovePrompt(() => {
+        console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
+      })
       try {
         await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
-        console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
+        printAbovePrompt(() => {
+          console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
+        })
       } catch (err) {
-        console.log(renderMarkdown(`❌ **Error sending queued messages:** ${err.message}`))
+        printAbovePrompt(() => {
+          console.log(renderMarkdown(`❌ **Error sending queued messages:** ${err.message}`))
+        })
         isBusy = false
       }
     }
@@ -253,22 +279,23 @@ export async function repl (sessionId, options = {}) {
     try {
       const session = await apiRequest(fullSessionId, 'GET', null, true)
       if (session.state !== lastState) {
-        process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`)
-        const wasWorking = (lastState === 'IN_PROGRESS' || lastState === 'ACTIVE')
-        lastState = session.state
-        if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED') {
-          isBusy = false
-          if (wasWorking && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED')) {
-            sendDesktopNotification(
-              `Jules AI (${basePromptLabel})`,
-              `Jules is now ${session.state.toLowerCase().replace(/_/g, ' ')}.`,
-              options
-            )
+        printAbovePrompt(() => {
+          process.stdout.write(`\n\x1b[33m[${new Date().toLocaleTimeString()}] State: ${session.state}\x1b[0m\n`)
+          const wasWorking = (lastState === 'IN_PROGRESS' || lastState === 'ACTIVE')
+          lastState = session.state
+          if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED') {
+            isBusy = false
+            if (wasWorking && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED')) {
+              sendDesktopNotification(
+                `Jules AI (${basePromptLabel})`,
+                `Jules is now ${session.state.toLowerCase().replace(/_/g, ' ')}.`,
+                options
+              )
+            }
+          } else if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE') {
+            isBusy = true
           }
-        } else if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE') {
-          isBusy = true
-        }
-        safePrompt(true)
+        })
       }
 
       if (session.updateTime !== lastUpdateTime) {
@@ -278,6 +305,16 @@ export async function repl (sessionId, options = {}) {
         if (lastSeenActivityIndex === -1 && !options.history) {
           lastSeenActivityIndex = activities.length - 1
         } else if (activities.length > lastSeenActivityIndex + 1) {
+          if (!rl.closed) {
+            try {
+              if (process.stdout.isTTY) {
+                readline.clearLine(process.stdout, 0)
+                readline.cursorTo(process.stdout, 0)
+              } else {
+                process.stdout.write('\r\x1b[K')
+              }
+            } catch (e) {}
+          }
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
               await printActivity(i, activities[i], fullSessionId, { ...options, activities })
@@ -286,6 +323,7 @@ export async function repl (sessionId, options = {}) {
             }
           }
           lastSeenActivityIndex = activities.length - 1
+          updatePrompt()
           safePrompt(true)
         }
         lastUpdateTime = session.updateTime
@@ -293,11 +331,15 @@ export async function repl (sessionId, options = {}) {
         if (options.gitPull && !hasPulledForWork && hasJulesFinishedWork(activities, session)) {
           hasPulledForWork = true
           try {
-            console.log(renderMarkdown('Jules is done with work. Running `git pull`...'))
-            const output = execSync('git pull', { encoding: 'utf8' })
-            console.log(output)
+            printAbovePrompt(() => {
+              console.log(renderMarkdown('Jules is done with work. Running `git pull`...'))
+              const output = execSync('git pull', { encoding: 'utf8' })
+              console.log(output)
+            })
           } catch (err) {
-            console.log(renderMarkdown(`❌ **Error running 'git pull':** ${err.message}`))
+            printAbovePrompt(() => {
+              console.log(renderMarkdown(`❌ **Error running 'git pull':** ${err.message}`))
+            })
           }
         }
       }
@@ -318,15 +360,17 @@ export async function repl (sessionId, options = {}) {
           if (autoSend) {
             currentPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000
             if (idlePollCount === maxIdlePolls) {
-              console.log('\n\x1b[36m💤 Idle mode: Auto-send active. Checking Jules status every minute...\x1b[0m\n')
-              safePrompt(true)
+              printAbovePrompt(() => {
+                console.log('\n\x1b[36m💤 Idle mode: Auto-send active. Checking Jules status every minute...\x1b[0m\n')
+              })
             }
           } else {
             if (!isPollingPaused) {
               isPollingPaused = true
-              console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
-              console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
-              safePrompt(true)
+              printAbovePrompt(() => {
+                console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
+                console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
+              })
             }
             log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
             return
