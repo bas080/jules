@@ -284,18 +284,28 @@ export async function repl (sessionId, options = {}) {
       if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
         idlePollCount++
         if (idlePollCount >= maxIdlePolls) {
-          if (!isPollingPaused) {
-            isPollingPaused = true
-            console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
-            console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
-            safePrompt(true)
+          if (autoSend) {
+            currentPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000
+            if (idlePollCount === maxIdlePolls) {
+              console.log('\n\x1b[36m💤 Idle mode: Auto-send active. Checking Jules status every minute...\x1b[0m\n')
+              safePrompt(true)
+            }
+          } else {
+            if (!isPollingPaused) {
+              isPollingPaused = true
+              console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
+              console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
+              safePrompt(true)
+            }
+            log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
+            return
           }
-          log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
-          return
+        } else {
+          currentPollInterval = basePollInterval
         }
+      } else {
+        currentPollInterval = basePollInterval
       }
-
-      currentPollInterval = basePollInterval
     } catch (err) {
       if (isRateLimitError(err)) {
         currentPollInterval = Math.min(currentPollInterval * 2, 30000)
