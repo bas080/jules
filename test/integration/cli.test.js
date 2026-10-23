@@ -1798,6 +1798,30 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     assert.strictEqual(sendMsgReqs.length, 0)
   })
 
+  test('repl auto-sends message when session is ALREADY COMPLETED and message enters queue', async () => {
+    mockResponses['GET /sessions/alreadyCompleted123'] = {
+      status: 200,
+      body: { name: 'sessions/alreadyCompleted123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/alreadyCompleted123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/alreadyCompleted123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'alreadyCompleted123'], [
+      { trigger: 'State: COMPLETED', input: 'new item for completed session' },
+      { trigger: 'Agent is thinking', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/alreadyCompleted123:sendMessage')
+    assert.ok(sendMsgReqs.length > 0)
+    assert.strictEqual(sendMsgReqs[0].body.prompt, 'new item for completed session')
+  })
+
   test('repl /queue strategy configures queue mode and dispatch', async () => {
     mockResponses['GET /sessions/queueStrat123'] = {
       status: 200,
