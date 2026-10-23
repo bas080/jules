@@ -47,11 +47,11 @@ export function isColorSupported () {
   return Boolean(process.stdout && process.stdout.isTTY)
 }
 
-export function renderMarkdown (mdText) {
+export function renderMarkdown (mdText, customWidth = null) {
   if (!mdText) return ''
   if (!isColorSupported()) return mdText
 
-  const termWidth = process.stdout && process.stdout.columns ? Math.min(process.stdout.columns - 2, 100) : 80
+  const termWidth = customWidth || (process.stdout && process.stdout.columns ? Math.max(process.stdout.columns - 2, 80) : 120)
 
   const renderer = new TerminalRenderer({
     showSectionPrefix: false,
@@ -70,6 +70,38 @@ export function getInterdiff (previousPatch, currentPatch, sessionId) {
   const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'
   const diff = computeInterdiff(previousPatch, currentPatch, `a/${cleanId}`, `b/${cleanId}`)
   return diff
+}
+
+export async function getPreviousPatchFromHistory (sessionId, index = null, activities = null) {
+  const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'
+  if (sessionPatches.has(cleanId)) {
+    return sessionPatches.get(cleanId)
+  }
+
+  let actList = activities
+  if (!actList && sessionId) {
+    try {
+      actList = await fetchAllActivities(sessionId)
+    } catch (err) {
+      log(`Failed to fetch activity history for previous patch: ${err.message}`)
+    }
+  }
+
+  if (Array.isArray(actList)) {
+    const checkIdx = (index !== null && index !== undefined && index >= 0) ? index - 1 : actList.length - 1
+    for (let i = checkIdx; i >= 0; i--) {
+      const act = actList[i]
+      if (act && act.artifacts && Array.isArray(act.artifacts)) {
+        for (const art of act.artifacts) {
+          if (art && art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
+            return art.changeSet.gitPatch.unidiffPatch
+          }
+        }
+      }
+    }
+  }
+
+  return ''
 }
 
 export function readAndFormatLocalFile (filepath) {
@@ -188,15 +220,25 @@ export function formatSourceDisplay (s) {
 }
 
 export function listSessionsFromList (sessions) {
+  const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
+  const maxColWidth = Math.max(15, Math.floor((termCols - 20) / 4))
+
+  function formatCell (val) {
+    if (!val) return ''
+    const clean = String(val).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+    if (clean.length <= maxColWidth) return clean
+    return clean.slice(0, Math.max(0, maxColWidth - 3)) + '...'
+  }
+
   let table = '| Session ID | Source | State | Created Time |\n'
   table += '| --- | --- | --- | --- |\n'
 
   sessions.forEach((s) => {
-    const id = s.name || s.id || 'unknown'
+    const id = formatCell(s.name || s.id || 'unknown')
     const rawSource = s.sourceContext || s.source || s.sourceId
-    const sourceDisplay = formatSourceDisplay(rawSource)
-    const state = s.state || 'UNKNOWN'
-    const created = s.createTime || 'unknown'
+    const sourceDisplay = formatCell(formatSourceDisplay(rawSource))
+    const state = formatCell(s.state || 'UNKNOWN')
+    const created = formatCell(s.createTime || 'unknown')
 
     table += `| ${id} | ${sourceDisplay} | ${state} | ${created} |\n`
   })
@@ -287,7 +329,7 @@ export function getActivityType (activity = {}) {
   return 'unknown'
 }
 
-export function printActivity (index, activity, sessionId = null, options = {}) {
+export async function printActivity (index, activity, sessionId = null, options = {}) {
   log(`Printing Activity ${index}: %O`, activity)
   const time = activity.createTime ? `\x1b[90m[${activity.createTime}]\x1b[0m ` : ''
   const originator = activity.originator || 'Unknown'
@@ -335,12 +377,13 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
     if (['type', 'createTime', 'name', 'originator', 'agentMessaged', 'userMessaged', 'id', 'planGenerated', 'planApproved', 'sessionCompleted', 'sessionFailed', 'progressUpdated'].includes(key)) continue
 
     if (key === 'artifacts' && Array.isArray(value)) {
-      value.forEach((art, i) => {
+      for (let i = 0; i < value.length; i++) {
+        const art = value[i]
         console.error(`\x1b[32mArtifact ${i}:\x1b[0m`)
         if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
           const currentPatch = art.changeSet.gitPatch.unidiffPatch
           const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'
-          const previousPatch = sessionPatches.get(cleanId) || ''
+          const previousPatch = await getPreviousPatchFromHistory(sessionId, index, options.activities)
 
           try {
             const tmpPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`)
@@ -377,7 +420,7 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
         } else {
           console.log(renderMarkdown(`\`\`\`json\n${JSON.stringify(art, null, 2)}\n\`\`\``))
         }
-      })
+      }
     } else {
       console.error(`\x1b[32m${key}:\x1b[0m`)
       console.log(renderMarkdown(`\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``))
@@ -397,7 +440,7 @@ export function getSessionStateFilePath (sessionId) {
 export function saveSessionState (sessionId, stateObj) {
   try {
     const stateFile = getSessionStateFilePath(sessionId)
-    if (!stateObj.name && !stateObj.color && (!stateObj.queue || stateObj.queue.length === 0)) {
+    if (!stateObj.name && !stateObj.color && (!stateObj.queue || stateObj.queue.length === 0) && !stateObj.queueMode && !stateObj.queueDispatch && stateObj.autoSend === undefined) {
       if (fs.existsSync(stateFile)) {
         fs.unlinkSync(stateFile)
       }
@@ -419,12 +462,15 @@ export function loadSessionState (sessionId) {
         return {
           name: parsed.name || null,
           color: parsed.color || null,
-          queue: Array.isArray(parsed.queue) ? parsed.queue : []
+          queue: Array.isArray(parsed.queue) ? parsed.queue : [],
+          queueMode: parsed.queueMode || null,
+          queueDispatch: parsed.queueDispatch || null,
+          autoSend: parsed.autoSend !== undefined ? Boolean(parsed.autoSend) : null
         }
       }
     }
   } catch (err) {
     log(`Failed to load session state for ${sessionId}: ${err.message}`)
   }
-  return { name: null, color: null, queue: [] }
+  return { name: null, color: null, queue: [], queueMode: null, queueDispatch: null, autoSend: null }
 }

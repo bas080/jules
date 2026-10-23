@@ -54,6 +54,21 @@ export async function runCli (argv = process.argv) {
       default: true,
       describe: 'Send desktop notifications when Jules becomes idle or requires input (env: JULES_NOTIFY)'
     })
+    .option('queue-dispatch', {
+      type: 'string',
+      choices: ['bulk', 'single'],
+      describe: 'Configure message queue dispatch behavior in REPL (env: JULES_QUEUE_DISPATCH)'
+    })
+    .option('queue-mode', {
+      type: 'string',
+      choices: ['direct', 'buffered'],
+      describe: 'Configure message queueing mode in REPL (env: JULES_QUEUE_MODE)'
+    })
+    .option('auto-send', {
+      type: 'boolean',
+      default: true,
+      describe: 'Automatically send queued messages when Jules becomes idle (env: JULES_AUTO_SEND)'
+    })
 
   registerSessionsCommand(parser)
   registerSourcesCommand(parser)

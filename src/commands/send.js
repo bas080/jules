@@ -57,7 +57,7 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
             if (act.sessionCompleted) hasCompletedActivity = true
             if (act.sessionFailed) hasFailedActivity = true
             try {
-              printActivity(i, act, fullSessionId, options)
+              await printActivity(i, act, fullSessionId, { ...options, activities })
             } catch (err) {
               console.error(`\x1b[31mError printing activity ${i}: ${err.message}\x1b[0m`)
             }

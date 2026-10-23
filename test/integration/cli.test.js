@@ -143,6 +143,9 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
           const currentStep = steps[stepIdx]
           if (clean.includes(currentStep.trigger)) {
             stepIdx++
+            if (currentStep.action) {
+              currentStep.action()
+            }
             if (currentStep.input) {
               proc.stdin.write(currentStep.input + '\n')
             }
@@ -1546,8 +1549,7 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
 
     await runRepl(['repl', '-s', 'replFlush123'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued msg 1' },
-      { trigger: 'Message queued', input: 'queued msg 2' },
-      { trigger: '[2]', input: '/flush' },
+      { trigger: 'Message queued', input: '/flush queued msg 2' },
       { trigger: 'Messages flushed and sent immediately', kill: true }
     ])
 
@@ -1678,6 +1680,166 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
 
     assert.match(stdout, /Queued Messages \(1\):/)
     assert.match(stdout, /1\. first queued item/)
+  })
+
+  test('repl /send one dispatches only first queued message', async () => {
+    mockResponses['GET /sessions/sendOne123'] = {
+      status: 200,
+      body: { name: 'sessions/sendOne123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/sendOne123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/sendOne123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'sendOne123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'msg 1' },
+      { trigger: 'Message queued', input: '/send one' },
+      { trigger: 'Messages flushed and sent immediately', kill: true }
+    ])
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendOne123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'msg 1')
+  })
+
+  test('repl /send N dispatches specific queued item by 1-based index', async () => {
+    mockResponses['GET /sessions/sendIndex123'] = {
+      status: 200,
+      body: { name: 'sessions/sendIndex123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/sendIndex123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/sendIndex123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'sendIndex123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'first item' },
+      { trigger: 'Message queued', input: '/send 1' },
+      { trigger: 'Sending queued item 1', kill: true }
+    ])
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendIndex123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'first item')
+    assert.match(stdout, /Sending queued item 1/)
+  })
+
+  test('repl automatically sends next queued item when session becomes COMPLETED and autoSend is enabled', async () => {
+    mockResponses['GET /sessions/autoSendCompleted123'] = {
+      status: 200,
+      body: { name: 'sessions/autoSendCompleted123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/autoSendCompleted123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/autoSendCompleted123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'autoSendCompleted123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued item 1' },
+      {
+        trigger: 'Message queued',
+        action: () => {
+          mockResponses['GET /sessions/autoSendCompleted123'] = {
+            status: 200,
+            body: { name: 'sessions/autoSendCompleted123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:01Z' }
+          }
+        }
+      },
+      { trigger: 'Messages flushed and sent immediately', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/autoSendCompleted123:sendMessage')
+    assert.ok(sendMsgReqs.length > 0)
+    assert.strictEqual(sendMsgReqs[0].body.prompt, 'queued item 1')
+  })
+
+  test('repl does NOT auto-send queued messages when session is AWAITING_USER_INPUT', async () => {
+    mockResponses['GET /sessions/awaitingInput123'] = {
+      status: 200,
+      body: { name: 'sessions/awaitingInput123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/awaitingInput123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/awaitingInput123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'awaitingInput123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued item' },
+      {
+        trigger: 'Message queued',
+        action: () => {
+          mockResponses['GET /sessions/awaitingInput123'] = {
+            status: 200,
+            body: { name: 'sessions/awaitingInput123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:01Z' }
+          }
+        }
+      },
+      { trigger: 'State: AWAITING_USER_INPUT', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/awaitingInput123:sendMessage')
+    assert.strictEqual(sendMsgReqs.length, 0)
+  })
+
+  test('repl auto-sends message when session is ALREADY COMPLETED and message enters queue', async () => {
+    mockResponses['GET /sessions/alreadyCompleted123'] = {
+      status: 200,
+      body: { name: 'sessions/alreadyCompleted123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/alreadyCompleted123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/alreadyCompleted123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'alreadyCompleted123'], [
+      { trigger: 'State: COMPLETED', input: 'new item for completed session' },
+      { trigger: 'Agent is thinking', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/alreadyCompleted123:sendMessage')
+    assert.ok(sendMsgReqs.length > 0)
+    assert.strictEqual(sendMsgReqs[0].body.prompt, 'new item for completed session')
+  })
+
+  test('repl /queue strategy configures queue mode and dispatch', async () => {
+    mockResponses['GET /sessions/queueStrat123'] = {
+      status: 200,
+      body: { name: 'sessions/queueStrat123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/queueStrat123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'queueStrat123'], [
+      { trigger: 'State: IN_PROGRESS', input: '/queue single' },
+      { trigger: 'queue dispatch set to: single', input: '/queue buffered' },
+      { trigger: 'queue mode set to: buffered', kill: true }
+    ])
+
+    assert.match(stdout, /queue dispatch set to: single/)
+    assert.match(stdout, /queue mode set to: buffered/)
   })
 
   test('repl checks session state before sending directly and queues if IN_PROGRESS', async () => {
