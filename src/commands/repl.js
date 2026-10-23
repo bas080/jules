@@ -398,19 +398,29 @@ export async function repl (sessionId, options = {}) {
           log(`Failed to fetch activities for /status: ${err.message}`)
         }
 
+        const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
+        const maxValWidth = Math.max(25, termCols - 28)
+
+        function formatVal (val) {
+          if (!val) return ''
+          const clean = String(val).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+          if (clean.length <= maxValWidth) return clean
+          return clean.slice(0, Math.max(0, maxValWidth - 3)) + '...'
+        }
+
         let statusMd = '# Session Status\n\n'
         statusMd += '| Property | Value |\n| --- | --- |\n'
-        statusMd += `| **session** | ${fullSessionId} |\n`
-        if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${sourceDisplay} |\n`
-        if (branch) statusMd += `| **branch** | ${branch} |\n`
-        if (sessionInfo.title) statusMd += `| **title** | ${sessionInfo.title} |\n`
-        if (sessionInfo.state) statusMd += `| **state** | ${sessionInfo.state} |\n`
-        if (lastUserMessage) statusMd += `| **last message** | ${lastUserMessage.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`
-        if (sessionInfo.createTime) statusMd += `| **created** | ${sessionInfo.createTime} |\n`
-        if (sessionInfo.updateTime) statusMd += `| **updated** | ${sessionInfo.updateTime} |\n`
-        if (prUrl) statusMd += `| **pr** | ${prUrl} |\n`
+        statusMd += `| **session** | ${formatVal(fullSessionId)} |\n`
+        if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${formatVal(sourceDisplay)} |\n`
+        if (branch) statusMd += `| **branch** | ${formatVal(branch)} |\n`
+        if (sessionInfo.title) statusMd += `| **title** | ${formatVal(sessionInfo.title)} |\n`
+        if (sessionInfo.state) statusMd += `| **state** | ${formatVal(sessionInfo.state)} |\n`
+        if (lastUserMessage) statusMd += `| **last message** | ${formatVal(lastUserMessage)} |\n`
+        if (sessionInfo.createTime) statusMd += `| **created** | ${formatVal(sessionInfo.createTime)} |\n`
+        if (sessionInfo.updateTime) statusMd += `| **updated** | ${formatVal(sessionInfo.updateTime)} |\n`
+        if (prUrl) statusMd += `| **pr** | ${formatVal(prUrl)} |\n`
         else statusMd += '| **pr** | None generated yet |\n'
-        statusMd += `| **web** | https://jules.google.com/session/${cleanId} |\n`
+        statusMd += `| **web** | ${formatVal(`https://jules.google.com/session/${cleanId}`)} |\n`
 
         console.log(`\n${renderMarkdown(statusMd)}\n`)
       } catch (err) {
