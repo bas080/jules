@@ -120,6 +120,9 @@ export async function repl (sessionId, options = {}) {
     autoSend = sessionState.autoSend
   }
 
+  let lastMessageSentTime = 0
+  const sendCooldown = process.env.JULES_SEND_COOLDOWN ? parseInt(process.env.JULES_SEND_COOLDOWN, 10) : (process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000)
+
   function resumePolling () {
     const wasPaused = isPollingPaused
     idlePollCount = 0
@@ -195,7 +198,31 @@ export async function repl (sessionId, options = {}) {
   rl.prompt()
 
   async function flushQueue (dispatchType = queueDispatch, force = false) {
-    if (messageQueue.length > 0 && (!isBusy || force)) {
+    if (messageQueue.length === 0) return
+
+    const now = Date.now()
+    const elapsed = now - lastMessageSentTime
+    if (!force && lastMessageSentTime > 0 && elapsed < sendCooldown) {
+      log(`Cooldown active: ${sendCooldown - elapsed}ms remaining before sending next message.`)
+      return
+    }
+
+    if (!force) {
+      try {
+        const freshSession = await apiRequest(fullSessionId, 'GET', null, true)
+        if (freshSession.state === 'IN_PROGRESS' || freshSession.state === 'ACTIVE') {
+          isBusy = true
+          lastState = freshSession.state
+          updatePrompt()
+          log(`Session state is ${freshSession.state}. Postponing queue flush.`)
+          return
+        }
+      } catch (err) {
+        log(`Failed no-cache state check in flushQueue: ${err.message}`)
+      }
+    }
+
+    if (!isBusy || force) {
       let payload = ''
       if (dispatchType === 'single' || dispatchType === 'one') {
         payload = messageQueue.shift()
@@ -206,6 +233,7 @@ export async function repl (sessionId, options = {}) {
       saveQueue(fullSessionId, messageQueue)
       isBusy = true
       lastState = 'IN_PROGRESS'
+      lastMessageSentTime = Date.now()
       updatePrompt()
       console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
       try {
@@ -972,8 +1000,8 @@ export async function repl (sessionId, options = {}) {
     }
 
     try {
-      const session = await apiRequest(fullSessionId, 'GET', null, true)
-      if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE') {
+      const freshSession = await apiRequest(fullSessionId, 'GET', null, true)
+      if (freshSession.state === 'IN_PROGRESS' || freshSession.state === 'ACTIVE') {
         isBusy = true
         messageQueue.push(promptToSend)
         saveQueue(fullSessionId, messageQueue)
@@ -986,8 +1014,19 @@ export async function repl (sessionId, options = {}) {
       log(`Pre-send session state check failed: ${err.message}`)
     }
 
+    const elapsedSinceLast = Date.now() - lastMessageSentTime
+    if (lastMessageSentTime > 0 && elapsedSinceLast < sendCooldown) {
+      messageQueue.push(promptToSend)
+      saveQueue(fullSessionId, messageQueue)
+      updatePrompt()
+      console.log(`\x1b[33m⏳ Cooldown active (${Math.ceil((sendCooldown - elapsedSinceLast) / 1000)}s remaining). Message queued and will be sent automatically. (Type /send to send immediately)\x1b[0m`)
+      rl.prompt()
+      return
+    }
+
     isBusy = true
     lastState = 'IN_PROGRESS'
+    lastMessageSentTime = Date.now()
     updatePrompt()
     hasPulledForWork = false
     try {
