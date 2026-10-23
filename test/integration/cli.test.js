@@ -1704,6 +1704,32 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'msg 1')
   })
 
+  test('repl /send N dispatches specific queued item by 1-based index', async () => {
+    mockResponses['GET /sessions/sendIndex123'] = {
+      status: 200,
+      body: { name: 'sessions/sendIndex123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/sendIndex123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/sendIndex123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'sendIndex123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'first item' },
+      { trigger: 'Message queued', input: '/send 1' },
+      { trigger: 'Sending queued item 1', kill: true }
+    ])
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendIndex123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'first item')
+    assert.match(stdout, /Sending queued item 1/)
+  })
+
   test('repl /queue strategy configures queue mode and dispatch', async () => {
     mockResponses['GET /sessions/queueStrat123'] = {
       status: 200,
