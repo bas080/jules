@@ -64,6 +64,11 @@ export async function runCli (argv = process.argv) {
       choices: ['direct', 'buffered'],
       describe: 'Configure message queueing mode in REPL (env: JULES_QUEUE_MODE)'
     })
+    .option('auto-send', {
+      type: 'boolean',
+      default: true,
+      describe: 'Automatically send queued messages when Jules becomes idle (env: JULES_AUTO_SEND)'
+    })
 
   registerSessionsCommand(parser)
   registerSourcesCommand(parser)
