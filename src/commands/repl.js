@@ -111,6 +111,15 @@ export async function repl (sessionId, options = {}) {
   let queueMode = (options.queueMode || options['queue-mode'] || process.env.JULES_QUEUE_MODE || sessionState.queueMode || 'direct').toLowerCase()
   if (queueMode !== 'buffered' && queueMode !== 'first') queueMode = 'direct'
 
+  let autoSend = true
+  if (options.autoSend === false || options['auto-send'] === false) {
+    autoSend = false
+  } else if (process.env.JULES_AUTO_SEND === 'false' || process.env.JULES_AUTO_SEND === '0') {
+    autoSend = false
+  } else if (sessionState.autoSend !== null && sessionState.autoSend !== undefined) {
+    autoSend = sessionState.autoSend
+  }
+
   function resumePolling () {
     const wasPaused = isPollingPaused
     idlePollCount = 0
@@ -267,7 +276,7 @@ export async function repl (sessionId, options = {}) {
 
       if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED') {
         isBusy = false
-        if (queueMode === 'direct') {
+        if (queueMode === 'direct' && autoSend) {
           await flushQueue(queueDispatch)
         }
       }
@@ -311,7 +320,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/send', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/send', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify', '/autosend']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -632,12 +641,13 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/status\x1b[0m            Display current session status and PR URL')
       console.log('  \x1b[32m/pr\x1b[0m                Open related GitHub pull request in browser')
       console.log('  \x1b[32m/notify [on|off]\x1b[0m   Toggle or set desktop notification status')
+      console.log('  \x1b[32m/autosend [on|off]\x1b[0m Toggle auto-sending queued messages on idle')
       console.log('  \x1b[32m/upload <filepath>\x1b[0m   Attach and send local text file content')
       console.log('  \x1b[32m/approve\x1b[0m           Approve the generated plan')
       console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
       console.log('  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt')
       console.log('  \x1b[32m/color <color>\x1b[0m      Change prompt color (green, cyan, blue, yellow, magenta, red, white, default)')
-      console.log('  \x1b[32m/queue [strategy]\x1b[0m   View or update queue strategy (direct, buffered, bulk, single)')
+      console.log('  \x1b[32m/queue [strategy]\x1b[0m   View or update queue strategy (direct, buffered, bulk, single, auto, manual)')
       console.log('  \x1b[32m/history [count]\x1b[0m    List recent sent user prompts')
       console.log('  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR')
       console.log('  \x1b[32m/send [all|one]\x1b[0m     Send queued message(s) immediately (all in bulk or one by one)')
@@ -708,12 +718,40 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
+    if (text === '/autosend' || text.startsWith('/autosend')) {
+      const parts = text.split(/\s+/).filter(Boolean)
+      const arg = parts[1] ? parts[1].toLowerCase() : ''
+
+      if (arg === 'on' || arg === 'true' || arg === 'enable') {
+        autoSend = true
+        sessionState.autoSend = true
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ Auto-sending queued messages on idle enabled.\x1b[0m')
+      } else if (arg === 'off' || arg === 'false' || arg === 'disable') {
+        autoSend = false
+        sessionState.autoSend = false
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ Auto-sending queued messages on idle disabled.\x1b[0m')
+      } else if (arg === 'status') {
+        console.log(`\x1b[36mAuto-send on idle status:\x1b[0m ${autoSend ? 'enabled' : 'disabled'}`)
+      } else if (!arg) {
+        autoSend = !autoSend
+        sessionState.autoSend = autoSend
+        saveSessionState(fullSessionId, sessionState)
+        console.log(`\x1b[32m✔ Auto-sending queued messages on idle ${autoSend ? 'enabled' : 'disabled'}.\x1b[0m`)
+      } else {
+        console.error('\x1b[31m❌ Error: Invalid argument for /autosend. Usage: /autosend [on|off|status]\x1b[0m')
+      }
+      rl.prompt()
+      return
+    }
+
     if (text === '/queue' || text.startsWith('/queue')) {
       const parts = text.split(/\s+/).filter(Boolean)
       const strategy = parts[1] ? parts[1].toLowerCase() : ''
 
       if (!strategy) {
-        console.log(`\x1b[36mQueue Settings:\x1b[0m Mode = \x1b[1m${queueMode}\x1b[0m, Dispatch = \x1b[1m${queueDispatch}\x1b[0m`)
+        console.log(`\x1b[36mQueue Settings:\x1b[0m Mode = \x1b[1m${queueMode}\x1b[0m, Dispatch = \x1b[1m${queueDispatch}\x1b[0m, AutoSend = \x1b[1m${autoSend ? 'on' : 'off'}\x1b[0m`)
         if (messageQueue.length === 0) {
           console.log('\x1b[90mNo queued messages.\x1b[0m')
         } else {
@@ -743,8 +781,18 @@ export async function repl (sessionId, options = {}) {
         sessionState.queueDispatch = 'single'
         saveSessionState(fullSessionId, sessionState)
         console.log('\x1b[32m✔ REPL queue dispatch set to: single (sends queued messages one at a time).\x1b[0m')
+      } else if (strategy === 'auto') {
+        autoSend = true
+        sessionState.autoSend = true
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ Auto-send on idle set to: auto.\x1b[0m')
+      } else if (strategy === 'manual') {
+        autoSend = false
+        sessionState.autoSend = false
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ Auto-send on idle set to: manual (requires /send to dispatch).\x1b[0m')
       } else {
-        console.error(`\x1b[31m❌ Error: Unknown queue strategy '${strategy}'. Valid strategies: direct, buffered, bulk, single.\x1b[0m`)
+        console.error(`\x1b[31m❌ Error: Unknown queue strategy '${strategy}'. Valid strategies: direct, buffered, bulk, single, auto, manual.\x1b[0m`)
       }
       rl.prompt()
       return
@@ -934,6 +982,7 @@ export function registerReplCommand (yargs) {
         .option('notify', { type: 'boolean', default: true, describe: 'Send desktop notifications when Jules becomes idle or requires input' })
         .option('queue-dispatch', { type: 'string', choices: ['bulk', 'single'], describe: 'Configure message queue dispatch behavior (bulk or single)' })
         .option('queue-mode', { type: 'string', choices: ['direct', 'buffered'], describe: 'Configure message queue mode (direct or buffered)' })
+        .option('auto-send', { type: 'boolean', default: true, describe: 'Automatically send queued messages when Jules becomes idle (use --no-auto-send to disable)' })
     },
     async (argv) => {
       if (argv.create) {
