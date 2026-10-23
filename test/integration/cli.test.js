@@ -1766,6 +1766,38 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     assert.strictEqual(sendMsgReqs[0].body.prompt, 'queued item 1')
   })
 
+  test('repl does NOT auto-send queued messages when session is AWAITING_USER_INPUT', async () => {
+    mockResponses['GET /sessions/awaitingInput123'] = {
+      status: 200,
+      body: { name: 'sessions/awaitingInput123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/awaitingInput123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/awaitingInput123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'awaitingInput123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued item' },
+      {
+        trigger: 'Message queued',
+        action: () => {
+          mockResponses['GET /sessions/awaitingInput123'] = {
+            status: 200,
+            body: { name: 'sessions/awaitingInput123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:01Z' }
+          }
+        }
+      },
+      { trigger: 'State: AWAITING_USER_INPUT', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/awaitingInput123:sendMessage')
+    assert.strictEqual(sendMsgReqs.length, 0)
+  })
+
   test('repl /queue strategy configures queue mode and dispatch', async () => {
     mockResponses['GET /sessions/queueStrat123'] = {
       status: 200,
