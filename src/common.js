@@ -47,11 +47,11 @@ export function isColorSupported () {
   return Boolean(process.stdout && process.stdout.isTTY)
 }
 
-export function renderMarkdown (mdText) {
+export function renderMarkdown (mdText, customWidth = null) {
   if (!mdText) return ''
   if (!isColorSupported()) return mdText
 
-  const termWidth = process.stdout && process.stdout.columns ? Math.min(process.stdout.columns - 2, 100) : 80
+  const termWidth = customWidth || (process.stdout && process.stdout.columns ? Math.max(process.stdout.columns - 2, 80) : 120)
 
   const renderer = new TerminalRenderer({
     showSectionPrefix: false,
@@ -220,15 +220,25 @@ export function formatSourceDisplay (s) {
 }
 
 export function listSessionsFromList (sessions) {
+  const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
+  const maxColWidth = Math.max(15, Math.floor((termCols - 20) / 4))
+
+  function formatCell (val) {
+    if (!val) return ''
+    const clean = String(val).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+    if (clean.length <= maxColWidth) return clean
+    return clean.slice(0, Math.max(0, maxColWidth - 3)) + '...'
+  }
+
   let table = '| Session ID | Source | State | Created Time |\n'
   table += '| --- | --- | --- | --- |\n'
 
   sessions.forEach((s) => {
-    const id = s.name || s.id || 'unknown'
+    const id = formatCell(s.name || s.id || 'unknown')
     const rawSource = s.sourceContext || s.source || s.sourceId
-    const sourceDisplay = formatSourceDisplay(rawSource)
-    const state = s.state || 'UNKNOWN'
-    const created = s.createTime || 'unknown'
+    const sourceDisplay = formatCell(formatSourceDisplay(rawSource))
+    const state = formatCell(s.state || 'UNKNOWN')
+    const created = formatCell(s.createTime || 'unknown')
 
     table += `| ${id} | ${sourceDisplay} | ${state} | ${created} |\n`
   })
