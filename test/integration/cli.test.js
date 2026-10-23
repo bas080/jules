@@ -143,6 +143,9 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
           const currentStep = steps[stepIdx]
           if (clean.includes(currentStep.trigger)) {
             stepIdx++
+            if (currentStep.action) {
+              currentStep.action()
+            }
             if (currentStep.input) {
               proc.stdin.write(currentStep.input + '\n')
             }
@@ -1728,6 +1731,39 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
     assert.ok(sendMsgReq)
     assert.strictEqual(sendMsgReq.body.prompt, 'first item')
     assert.match(stdout, /Sending queued item 1/)
+  })
+
+  test('repl automatically sends next queued item when session becomes COMPLETED and autoSend is enabled', async () => {
+    mockResponses['GET /sessions/autoSendCompleted123'] = {
+      status: 200,
+      body: { name: 'sessions/autoSendCompleted123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/autoSendCompleted123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/autoSendCompleted123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'autoSendCompleted123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'queued item 1' },
+      {
+        trigger: 'Message queued',
+        action: () => {
+          mockResponses['GET /sessions/autoSendCompleted123'] = {
+            status: 200,
+            body: { name: 'sessions/autoSendCompleted123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:01Z' }
+          }
+        }
+      },
+      { trigger: 'Messages flushed and sent immediately', kill: true }
+    ])
+
+    const sendMsgReqs = mockRequests.filter(r => r.method === 'POST' && r.url === '/sessions/autoSendCompleted123:sendMessage')
+    assert.ok(sendMsgReqs.length > 0)
+    assert.strictEqual(sendMsgReqs[0].body.prompt, 'queued item 1')
   })
 
   test('repl /queue strategy configures queue mode and dispatch', async () => {
