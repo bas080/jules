@@ -112,9 +112,11 @@ export async function repl (sessionId, options = {}) {
   if (queueMode !== 'buffered' && queueMode !== 'first') queueMode = 'direct'
 
   function resumePolling () {
+    const wasPaused = isPollingPaused || idlePollCount > 0
     idlePollCount = 0
-    if (isPollingPaused) {
+    if (wasPaused) {
       isPollingPaused = false
+      lastUpdateTime = null
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(poll, 0)
     }
