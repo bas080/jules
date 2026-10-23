@@ -252,7 +252,7 @@ export async function repl (sessionId, options = {}) {
         } else if (activities.length > lastSeenActivityIndex + 1) {
           for (let i = lastSeenActivityIndex + 1; i < activities.length; i++) {
             try {
-              printActivity(i, activities[i], fullSessionId, options)
+              await printActivity(i, activities[i], fullSessionId, { ...options, activities })
             } catch (err) {
               console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`)
             }
