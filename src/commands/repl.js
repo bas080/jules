@@ -660,7 +660,7 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/queue [strategy]\x1b[0m   View or update queue strategy (direct, buffered, bulk, single, auto, manual)')
       console.log('  \x1b[32m/history [count]\x1b[0m    List recent sent user prompts')
       console.log('  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR')
-      console.log('  \x1b[32m/send [all|one]\x1b[0m     Send queued message(s) immediately (all in bulk or one by one)')
+      console.log('  \x1b[32m/send [all|one|N]\x1b[0m   Send queued message(s) immediately (all, one by one, or specific index N)')
       console.log('  \x1b[32m/flush\x1b[0m              Alias for /send')
       console.log('  \x1b[32m/clear\x1b[0m              Clear terminal screen')
       console.log('  \x1b[32m/web\x1b[0m                Open session URL in web browser')
@@ -827,6 +827,41 @@ export async function repl (sessionId, options = {}) {
     if (text === '/send' || text === '/flush' || text === '/now' || text.startsWith('/send ') || text.startsWith('/flush ') || text.startsWith('/now ')) {
       const match = text.match(/^\/(?:send|flush|now)(?:\s+(.*))?$/)
       const arg = match && match[1] ? match[1].trim() : ''
+
+      if (/^\d+$/.test(arg)) {
+        const targetIndex = parseInt(arg, 10) - 1
+        if (messageQueue.length === 0) {
+          console.error('\x1b[31m❌ Error: No queued messages to send.\x1b[0m')
+          rl.prompt()
+          return
+        }
+        if (targetIndex < 0 || targetIndex >= messageQueue.length) {
+          console.error(`\x1b[31m❌ Error: Invalid queue index ${arg}. Valid range: 1 to ${messageQueue.length}.\x1b[0m`)
+          rl.prompt()
+          return
+        }
+
+        const payload = messageQueue.splice(targetIndex, 1)[0]
+        saveQueue(fullSessionId, messageQueue)
+        isBusy = true
+        lastState = 'IN_PROGRESS'
+        updatePrompt()
+        console.log(`\n\x1b[36m📤 Sending queued item ${arg} to Jules...\x1b[0m`)
+        try {
+          await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
+          console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
+        } catch (err) {
+          console.error(`\x1b[31mError sending queued message: ${err.message}\x1b[0m`)
+          isBusy = false
+        }
+        clearTimeout(tailTimeout)
+        tailTimeout = setTimeout(async () => {
+          await poll()
+        }, Math.min(2000, basePollInterval))
+        rl.prompt()
+        return
+      }
+
       let dispatchType = queueDispatch
 
       if (arg === 'all') {
