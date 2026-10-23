@@ -397,7 +397,7 @@ export function getSessionStateFilePath (sessionId) {
 export function saveSessionState (sessionId, stateObj) {
   try {
     const stateFile = getSessionStateFilePath(sessionId)
-    if (!stateObj.name && !stateObj.color && (!stateObj.queue || stateObj.queue.length === 0)) {
+    if (!stateObj.name && !stateObj.color && (!stateObj.queue || stateObj.queue.length === 0) && !stateObj.queueMode && !stateObj.queueDispatch) {
       if (fs.existsSync(stateFile)) {
         fs.unlinkSync(stateFile)
       }
@@ -419,12 +419,14 @@ export function loadSessionState (sessionId) {
         return {
           name: parsed.name || null,
           color: parsed.color || null,
-          queue: Array.isArray(parsed.queue) ? parsed.queue : []
+          queue: Array.isArray(parsed.queue) ? parsed.queue : [],
+          queueMode: parsed.queueMode || null,
+          queueDispatch: parsed.queueDispatch || null
         }
       }
     }
   } catch (err) {
     log(`Failed to load session state for ${sessionId}: ${err.message}`)
   }
-  return { name: null, color: null, queue: [] }
+  return { name: null, color: null, queue: [], queueMode: null, queueDispatch: null }
 }

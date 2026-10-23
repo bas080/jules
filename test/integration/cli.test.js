@@ -1546,8 +1546,7 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
 
     await runRepl(['repl', '-s', 'replFlush123'], [
       { trigger: 'State: IN_PROGRESS', input: 'queued msg 1' },
-      { trigger: 'Message queued', input: 'queued msg 2' },
-      { trigger: '[2]', input: '/flush' },
+      { trigger: 'Message queued', input: '/flush queued msg 2' },
       { trigger: 'Messages flushed and sent immediately', kill: true }
     ])
 
@@ -1678,6 +1677,51 @@ describe('Jules CLI Tests', { timeout: 60000 }, () => {
 
     assert.match(stdout, /Queued Messages \(1\):/)
     assert.match(stdout, /1\. first queued item/)
+  })
+
+  test('repl /send one dispatches only first queued message', async () => {
+    mockResponses['GET /sessions/sendOne123'] = {
+      status: 200,
+      body: { name: 'sessions/sendOne123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/sendOne123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+    mockResponses['POST /sessions/sendOne123:sendMessage'] = {
+      status: 200,
+      body: {}
+    }
+
+    await runRepl(['repl', '-s', 'sendOne123'], [
+      { trigger: 'State: IN_PROGRESS', input: 'msg 1' },
+      { trigger: 'Message queued', input: '/send one' },
+      { trigger: 'Messages flushed and sent immediately', kill: true }
+    ])
+
+    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/sendOne123:sendMessage')
+    assert.ok(sendMsgReq)
+    assert.strictEqual(sendMsgReq.body.prompt, 'msg 1')
+  })
+
+  test('repl /queue strategy configures queue mode and dispatch', async () => {
+    mockResponses['GET /sessions/queueStrat123'] = {
+      status: 200,
+      body: { name: 'sessions/queueStrat123', state: 'IN_PROGRESS', updateTime: '2025-01-01T00:00:00Z' }
+    }
+    mockResponses['GET /sessions/queueStrat123/activities'] = {
+      status: 200,
+      body: { activities: [] }
+    }
+
+    const { stdout } = await runRepl(['repl', '-s', 'queueStrat123'], [
+      { trigger: 'State: IN_PROGRESS', input: '/queue single' },
+      { trigger: 'queue dispatch set to: single', input: '/queue buffered' },
+      { trigger: 'queue mode set to: buffered', kill: true }
+    ])
+
+    assert.match(stdout, /queue dispatch set to: single/)
+    assert.match(stdout, /queue mode set to: buffered/)
   })
 
   test('repl checks session state before sending directly and queues if IN_PROGRESS', async () => {

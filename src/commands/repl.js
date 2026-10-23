@@ -105,6 +105,12 @@ export async function repl (sessionId, options = {}) {
   let isPollingPaused = false
   const maxIdlePolls = 20
 
+  let queueDispatch = (options.queueDispatch || options['queue-dispatch'] || process.env.JULES_QUEUE_DISPATCH || sessionState.queueDispatch || 'bulk').toLowerCase()
+  if (queueDispatch !== 'single' && queueDispatch !== 'one') queueDispatch = 'bulk'
+
+  let queueMode = (options.queueMode || options['queue-mode'] || process.env.JULES_QUEUE_MODE || sessionState.queueMode || 'direct').toLowerCase()
+  if (queueMode !== 'buffered' && queueMode !== 'first') queueMode = 'direct'
+
   function resumePolling () {
     idlePollCount = 0
     if (isPollingPaused) {
@@ -176,18 +182,23 @@ export async function repl (sessionId, options = {}) {
 
   rl.prompt()
 
-  async function flushQueue () {
-    if (messageQueue.length > 0 && !isBusy) {
-      const combinedPayload = messageQueue.join('\n\n---\n\n')
-      messageQueue.length = 0
+  async function flushQueue (dispatchType = queueDispatch, force = false) {
+    if (messageQueue.length > 0 && (!isBusy || force)) {
+      let payload = ''
+      if (dispatchType === 'single' || dispatchType === 'one') {
+        payload = messageQueue.shift()
+      } else {
+        payload = messageQueue.join('\n\n---\n\n')
+        messageQueue.length = 0
+      }
       saveQueue(fullSessionId, messageQueue)
       isBusy = true
       lastState = 'IN_PROGRESS'
       updatePrompt()
       console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
       try {
-        await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: combinedPayload })
-        console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m')
+        await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
+        console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
       } catch (err) {
         console.error(`\x1b[31mError sending queued messages: ${err.message}\x1b[0m`)
         isBusy = false
@@ -253,7 +264,9 @@ export async function repl (sessionId, options = {}) {
 
       if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED') {
         isBusy = false
-        await flushQueue()
+        if (queueMode === 'direct') {
+          await flushQueue(queueDispatch)
+        }
       }
 
       if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
@@ -290,7 +303,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text.startsWith('/')) {
-      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify']
+      const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/send', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
         console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
@@ -591,10 +604,11 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/diff\x1b[0m              View and review latest git patch for the session')
       console.log('  \x1b[32m/rename <name>\x1b[0m       Set a custom display name/label for the REPL prompt')
       console.log('  \x1b[32m/color <color>\x1b[0m      Change prompt color (green, cyan, blue, yellow, magenta, red, white, default)')
-      console.log('  \x1b[32m/queue\x1b[0m              List currently queued messages')
+      console.log('  \x1b[32m/queue [strategy]\x1b[0m   View or update queue strategy (direct, buffered, bulk, single)')
       console.log('  \x1b[32m/history [count]\x1b[0m    List recent sent user prompts')
       console.log('  \x1b[32m/edit\x1b[0m               Edit currently queued messages in $EDITOR')
-      console.log('  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately')
+      console.log('  \x1b[32m/send [all|one]\x1b[0m     Send queued message(s) immediately (all in bulk or one by one)')
+      console.log('  \x1b[32m/flush\x1b[0m              Alias for /send')
       console.log('  \x1b[32m/clear\x1b[0m              Clear terminal screen')
       console.log('  \x1b[32m/web\x1b[0m                Open session URL in web browser')
       console.log('  \x1b[32m/help\x1b[0m               Display this help message\n')
@@ -661,15 +675,43 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
-    if (text === '/queue') {
-      if (messageQueue.length === 0) {
-        console.log('\x1b[90mNo queued messages.\x1b[0m')
+    if (text === '/queue' || text.startsWith('/queue')) {
+      const parts = text.split(/\s+/).filter(Boolean)
+      const strategy = parts[1] ? parts[1].toLowerCase() : ''
+
+      if (!strategy) {
+        console.log(`\x1b[36mQueue Settings:\x1b[0m Mode = \x1b[1m${queueMode}\x1b[0m, Dispatch = \x1b[1m${queueDispatch}\x1b[0m`)
+        if (messageQueue.length === 0) {
+          console.log('\x1b[90mNo queued messages.\x1b[0m')
+        } else {
+          console.log(`\n\x1b[1mQueued Messages (${messageQueue.length}):\x1b[0m`)
+          messageQueue.forEach((msg, i) => {
+            console.log(`\x1b[36m${i + 1}.\x1b[0m ${msg}`)
+          })
+          console.log('')
+        }
+      } else if (strategy === 'direct') {
+        queueMode = 'direct'
+        sessionState.queueMode = 'direct'
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ REPL queue mode set to: direct (auto-send when idle).\x1b[0m')
+      } else if (strategy === 'buffered' || strategy === 'first') {
+        queueMode = 'buffered'
+        sessionState.queueMode = 'buffered'
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ REPL queue mode set to: buffered (writes prompts to queue first).\x1b[0m')
+      } else if (strategy === 'bulk' || strategy === 'all') {
+        queueDispatch = 'bulk'
+        sessionState.queueDispatch = 'bulk'
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ REPL queue dispatch set to: bulk (sends all queued messages combined).\x1b[0m')
+      } else if (strategy === 'single' || strategy === 'one') {
+        queueDispatch = 'single'
+        sessionState.queueDispatch = 'single'
+        saveSessionState(fullSessionId, sessionState)
+        console.log('\x1b[32m✔ REPL queue dispatch set to: single (sends queued messages one at a time).\x1b[0m')
       } else {
-        console.log(`\n\x1b[1mQueued Messages (${messageQueue.length}):\x1b[0m`)
-        messageQueue.forEach((msg, i) => {
-          console.log(`\x1b[36m${i + 1}.\x1b[0m ${msg}`)
-        })
-        console.log('')
+        console.error(`\x1b[31m❌ Error: Unknown queue strategy '${strategy}'. Valid strategies: direct, buffered, bulk, single.\x1b[0m`)
       }
       rl.prompt()
       return
@@ -691,37 +733,30 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
-    if (text === '/flush' || text === '/now' || text.startsWith('/flush ') || text.startsWith('/now ')) {
-      const match = text.match(/^\/(?:flush|now)(?:\s+(.*))?$/)
-      const inlineMsg = match && match[1] ? match[1].trim() : ''
+    if (text === '/send' || text === '/flush' || text === '/now' || text.startsWith('/send ') || text.startsWith('/flush ') || text.startsWith('/now ')) {
+      const match = text.match(/^\/(?:send|flush|now)(?:\s+(.*))?$/)
+      const arg = match && match[1] ? match[1].trim() : ''
+      let dispatchType = queueDispatch
 
-      if (inlineMsg) {
-        messageQueue.push(inlineMsg)
+      if (arg === 'all') {
+        dispatchType = 'bulk'
+      } else if (arg === 'one') {
+        dispatchType = 'single'
+      } else if (arg) {
+        messageQueue.push(arg)
       }
 
       if (messageQueue.length === 0) {
-        console.error('\x1b[31m❌ Error: No queued messages to flush.\x1b[0m')
+        console.error('\x1b[31m❌ Error: No queued messages to send.\x1b[0m')
         rl.prompt()
         return
       }
 
-      const combinedPayload = messageQueue.join('\n\n---\n\n')
-      messageQueue.length = 0
-      saveQueue(fullSessionId, messageQueue)
-      isBusy = true
-      lastState = 'IN_PROGRESS'
-      updatePrompt()
-      try {
-        await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: combinedPayload })
-        console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
-        clearTimeout(tailTimeout)
-        tailTimeout = setTimeout(async () => {
-          await poll()
-        }, Math.min(2000, basePollInterval))
-      } catch (err) {
-        console.error(`\x1b[31mError sending message: ${err.message}\x1b[0m`)
-        isBusy = false
-      }
+      await flushQueue(dispatchType, true)
+      clearTimeout(tailTimeout)
+      tailTimeout = setTimeout(async () => {
+        await poll()
+      }, Math.min(2000, basePollInterval))
       rl.prompt()
       return
     }
@@ -786,11 +821,20 @@ export async function repl (sessionId, options = {}) {
 
     const promptToSend = text
 
+    if (queueMode === 'buffered') {
+      messageQueue.push(promptToSend)
+      saveQueue(fullSessionId, messageQueue)
+      updatePrompt()
+      console.log('\x1b[33m⏳ Message queued (buffered mode). Type /send to dispatch.\x1b[0m')
+      rl.prompt()
+      return
+    }
+
     if (isBusy || messageQueue.length > 0) {
       messageQueue.push(promptToSend)
       saveQueue(fullSessionId, messageQueue)
       updatePrompt()
-      console.log('\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m')
+      console.log('\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /send to send immediately)\x1b[0m')
       rl.prompt()
       return
     }
@@ -802,7 +846,7 @@ export async function repl (sessionId, options = {}) {
         messageQueue.push(promptToSend)
         saveQueue(fullSessionId, messageQueue)
         updatePrompt()
-        console.log('\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /flush to send immediately)\x1b[0m')
+        console.log('\x1b[33m⏳ Jules is working. Message queued and will be sent automatically when Jules is ready. (Type /send to send immediately)\x1b[0m')
         rl.prompt()
         return
       }
@@ -855,6 +899,8 @@ export function registerReplCommand (yargs) {
         .option('git-pull', { type: 'boolean', describe: "Automatically run 'git pull' before starting the REPL" })
         .option('git-patch', { type: 'boolean', describe: 'Automatically apply received git patches to repository' })
         .option('notify', { type: 'boolean', default: true, describe: 'Send desktop notifications when Jules becomes idle or requires input' })
+        .option('queue-dispatch', { type: 'string', choices: ['bulk', 'single'], describe: 'Configure message queue dispatch behavior (bulk or single)' })
+        .option('queue-mode', { type: 'string', choices: ['direct', 'buffered'], describe: 'Configure message queue mode (direct or buffered)' })
     },
     async (argv) => {
       if (argv.create) {
