@@ -45,8 +45,8 @@ export async function repl (sessionId, options = {}) {
     }
   }
 
-  const fullSessionId = targetSessionId.startsWith('sessions/') ? targetSessionId : `sessions/${targetSessionId}`
-  const shortSessionId = fullSessionId.replace(/^sessions\//, '')
+  let fullSessionId = targetSessionId.startsWith('sessions/') ? targetSessionId : `sessions/${targetSessionId}`
+  let shortSessionId = fullSessionId.replace(/^sessions\//, '')
 
   const sessionState = loadSessionState(fullSessionId)
   let basePromptLabel = sessionState.name
@@ -509,14 +509,39 @@ export async function repl (sessionId, options = {}) {
 
       try {
         console.log('\n\x1b[36m🚀 Starting a new session for the same source...\x1b[0m')
-        clearTimeout(tailTimeout)
-        rl.removeAllListeners('close')
-        rl.close()
-        process.removeListener('SIGCONT', onSigCont)
-
         const newOptions = { ...options, source: sourceForNewSession || options.source }
         const newSessionId = await createSession(promptArg, sourceForNewSession, newOptions)
-        await repl(newSessionId, newOptions)
+
+        fullSessionId = newSessionId.startsWith('sessions/') ? newSessionId : `sessions/${newSessionId}`
+        shortSessionId = fullSessionId.replace(/^sessions\//, '')
+
+        const newSessionState = loadSessionState(fullSessionId)
+        Object.assign(sessionState, newSessionState)
+        messageQueue.length = 0
+        if (newSessionState.queue && newSessionState.queue.length > 0) {
+          messageQueue.push(...newSessionState.queue)
+        }
+
+        if (options.name) {
+          basePromptLabel = options.name
+        } else if (sourceForNewSession) {
+          basePromptLabel = sourceForNewSession
+        } else {
+          basePromptLabel = shortSessionId
+        }
+
+        lastSeenActivityIndex = -1
+        lastState = null
+        lastUpdateTime = null
+        idlePollCount = 0
+        isBusy = true
+        hasPulledForWork = false
+
+        updatePrompt()
+        console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}\n`)
+
+        clearTimeout(tailTimeout)
+        tailTimeout = setTimeout(poll, 0)
         return
       } catch (err) {
         console.error(`\x1b[31m❌ Error creating new session: ${err.message}\x1b[0m`)
