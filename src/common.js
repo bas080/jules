@@ -72,6 +72,38 @@ export function getInterdiff (previousPatch, currentPatch, sessionId) {
   return diff
 }
 
+export async function getPreviousPatchFromHistory (sessionId, index = null, activities = null) {
+  const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'
+  if (sessionPatches.has(cleanId)) {
+    return sessionPatches.get(cleanId)
+  }
+
+  let actList = activities
+  if (!actList && sessionId) {
+    try {
+      actList = await fetchAllActivities(sessionId)
+    } catch (err) {
+      log(`Failed to fetch activity history for previous patch: ${err.message}`)
+    }
+  }
+
+  if (Array.isArray(actList)) {
+    const checkIdx = (index !== null && index !== undefined && index >= 0) ? index - 1 : actList.length - 1
+    for (let i = checkIdx; i >= 0; i--) {
+      const act = actList[i]
+      if (act && act.artifacts && Array.isArray(act.artifacts)) {
+        for (const art of act.artifacts) {
+          if (art && art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
+            return art.changeSet.gitPatch.unidiffPatch
+          }
+        }
+      }
+    }
+  }
+
+  return ''
+}
+
 export function readAndFormatLocalFile (filepath) {
   const resolvedPath = path.resolve(filepath)
   if (!fs.existsSync(resolvedPath)) {
@@ -287,7 +319,7 @@ export function getActivityType (activity = {}) {
   return 'unknown'
 }
 
-export function printActivity (index, activity, sessionId = null, options = {}) {
+export async function printActivity (index, activity, sessionId = null, options = {}) {
   log(`Printing Activity ${index}: %O`, activity)
   const time = activity.createTime ? `\x1b[90m[${activity.createTime}]\x1b[0m ` : ''
   const originator = activity.originator || 'Unknown'
@@ -335,12 +367,13 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
     if (['type', 'createTime', 'name', 'originator', 'agentMessaged', 'userMessaged', 'id', 'planGenerated', 'planApproved', 'sessionCompleted', 'sessionFailed', 'progressUpdated'].includes(key)) continue
 
     if (key === 'artifacts' && Array.isArray(value)) {
-      value.forEach((art, i) => {
+      for (let i = 0; i < value.length; i++) {
+        const art = value[i]
         console.error(`\x1b[32mArtifact ${i}:\x1b[0m`)
         if (art.changeSet && art.changeSet.gitPatch && art.changeSet.gitPatch.unidiffPatch) {
           const currentPatch = art.changeSet.gitPatch.unidiffPatch
           const cleanId = sessionId ? sessionId.replace(/^sessions\//, '') : 'session'
-          const previousPatch = sessionPatches.get(cleanId) || ''
+          const previousPatch = await getPreviousPatchFromHistory(sessionId, index, options.activities)
 
           try {
             const tmpPath = path.join(os.tmpdir(), `jules-${cleanId}.patch`)
@@ -377,7 +410,7 @@ export function printActivity (index, activity, sessionId = null, options = {}) 
         } else {
           console.log(renderMarkdown(`\`\`\`json\n${JSON.stringify(art, null, 2)}\n\`\`\``))
         }
-      })
+      }
     } else {
       console.error(`\x1b[32m${key}:\x1b[0m`)
       console.log(renderMarkdown(`\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\``))
