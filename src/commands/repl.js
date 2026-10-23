@@ -112,11 +112,12 @@ export async function repl (sessionId, options = {}) {
   if (queueMode !== 'buffered' && queueMode !== 'first') queueMode = 'direct'
 
   function resumePolling () {
-    const wasPaused = isPollingPaused || idlePollCount > 0
+    const wasPaused = isPollingPaused
     idlePollCount = 0
     if (wasPaused) {
       isPollingPaused = false
       lastUpdateTime = null
+      console.log('\n\x1b[36m⏰ Activity detected. Waking up and checking for session updates...\x1b[0m')
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(poll, 0)
     }
@@ -274,7 +275,12 @@ export async function repl (sessionId, options = {}) {
       if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
         idlePollCount++
         if (idlePollCount >= maxIdlePolls) {
-          isPollingPaused = true
+          if (!isPollingPaused) {
+            isPollingPaused = true
+            console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
+            console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
+            safePrompt(true)
+          }
           log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
           return
         }
