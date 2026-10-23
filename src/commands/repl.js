@@ -121,6 +121,7 @@ export async function repl (sessionId, options = {}) {
   }
 
   let lastMessageSentTime = 0
+  let hasSeenActiveWork = false
   const sendCooldown = process.env.JULES_SEND_COOLDOWN ? parseInt(process.env.JULES_SEND_COOLDOWN, 10) : (process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000)
 
   function resumePolling () {
@@ -267,6 +268,7 @@ export async function repl (sessionId, options = {}) {
           }
         } else if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE') {
           isBusy = true
+          hasSeenActiveWork = true
         }
         safePrompt(true)
       }
@@ -305,7 +307,8 @@ export async function repl (sessionId, options = {}) {
       const isFinishedState = session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED'
       if (isFinishedState) {
         isBusy = false
-        if (autoSend) {
+        if (autoSend && hasSeenActiveWork) {
+          hasSeenActiveWork = false
           await flushQueue(queueDispatch)
         }
       }
@@ -599,6 +602,7 @@ export async function repl (sessionId, options = {}) {
         lastUpdateTime = null
         idlePollCount = 0
         isBusy = true
+        hasSeenActiveWork = false
         hasPulledForWork = false
 
         updatePrompt()
