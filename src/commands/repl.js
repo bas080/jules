@@ -304,9 +304,11 @@ export async function repl (sessionId, options = {}) {
         }
       }
 
-      const isFinishedState = session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED'
-      if (isFinishedState) {
+      if (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED') {
         isBusy = false
+      }
+
+      if (session.state === 'COMPLETED') {
         if (autoSend && hasSeenActiveWork) {
           hasSeenActiveWork = false
           await flushQueue(queueDispatch)
