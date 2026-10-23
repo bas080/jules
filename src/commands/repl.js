@@ -14,7 +14,6 @@ import {
   isRateLimitError,
   handlePollingError,
   readAndFormatLocalFile,
-  expandAtFilepaths,
   formatSourceDisplay,
   loadSessionState,
   saveSessionState,
@@ -27,6 +26,7 @@ import { createSession } from './create.js'
 import { archiveSession } from './cleanup.js'
 
 export async function repl (sessionId, options = {}) {
+  process.title = 'jules-repl'
   let hasPulledForWork = false
   let targetSessionId = sessionId
 
@@ -101,6 +101,23 @@ export async function repl (sessionId, options = {}) {
   let lastSeenActivityIndex = -1
   let lastState = null
   let lastUpdateTime = null
+  let idlePollCount = 0
+  let isPollingPaused = false
+  const maxIdlePolls = 20
+
+  function resumePolling () {
+    idlePollCount = 0
+    if (isPollingPaused) {
+      isPollingPaused = false
+      clearTimeout(tailTimeout)
+      tailTimeout = setTimeout(poll, 0)
+    }
+  }
+
+  const onStdinData = () => {
+    resumePolling()
+  }
+  process.stdin.on('data', onStdinData)
 
   function getStatusIcon () {
     if (isBusy || lastState === 'IN_PROGRESS' || lastState === 'ACTIVE') return '⚙'
@@ -164,9 +181,10 @@ export async function repl (sessionId, options = {}) {
       const combinedPayload = messageQueue.join('\n\n---\n\n')
       messageQueue.length = 0
       saveQueue(fullSessionId, messageQueue)
+      isBusy = true
+      lastState = 'IN_PROGRESS'
       updatePrompt()
       console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
-      isBusy = true
       try {
         await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: combinedPayload })
         console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m')
@@ -203,6 +221,7 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (session.updateTime !== lastUpdateTime) {
+        idlePollCount = 0
         const activities = await fetchAllActivities(fullSessionId)
 
         if (lastSeenActivityIndex === -1 && !options.history) {
@@ -236,10 +255,20 @@ export async function repl (sessionId, options = {}) {
         isBusy = false
         await flushQueue()
       }
+
+      if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
+        idlePollCount++
+        if (idlePollCount >= maxIdlePolls) {
+          isPollingPaused = true
+          log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
+          return
+        }
+      }
+
       currentPollInterval = basePollInterval
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000)
+        currentPollInterval = Math.min(currentPollInterval * 2, 30000)
       }
       handlePollingError(err, 'REPL background loop')
       safePrompt(true)
@@ -253,6 +282,7 @@ export async function repl (sessionId, options = {}) {
   let tailTimeout = setTimeout(poll, 0)
 
   rl.on('line', async (line) => {
+    resumePolling()
     const text = line.trim()
     if (!text) {
       rl.prompt()
@@ -288,15 +318,16 @@ export async function repl (sessionId, options = {}) {
         const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
         const sourceDisplay = formatSourceDisplay(rawSource)
 
-        console.log('\n\x1b[1mSession Status:\x1b[0m')
-        console.log(`  \x1b[36msession:\x1b[0m ${fullSessionId}`)
-        if (sourceDisplay && sourceDisplay !== 'none') console.log(`  \x1b[36msource:\x1b[0m ${sourceDisplay}`)
-        if (sessionInfo.title) console.log(`  \x1b[36mtitle:\x1b[0m ${sessionInfo.title}`)
-        if (sessionInfo.state) console.log(`  \x1b[36mstate:\x1b[0m ${sessionInfo.state}`)
-        if (sessionInfo.createTime) console.log(`  \x1b[36mcreated:\x1b[0m ${sessionInfo.createTime}`)
-        if (sessionInfo.updateTime) console.log(`  \x1b[36mupdated:\x1b[0m ${sessionInfo.updateTime}`)
+        let branch = null
+        if (sessionInfo.sourceContext && sessionInfo.sourceContext.githubRepoContext && sessionInfo.sourceContext.githubRepoContext.startingBranch) {
+          branch = sessionInfo.sourceContext.githubRepoContext.startingBranch
+        } else if (sessionInfo.startingBranch) {
+          branch = sessionInfo.startingBranch
+        }
 
         let prUrl = null
+        let lastUserMessage = null
+
         if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
           for (const out of sessionInfo.outputs) {
             if (out.pullRequest && out.pullRequest.url) {
@@ -306,32 +337,42 @@ export async function repl (sessionId, options = {}) {
           }
         }
 
-        if (!prUrl) {
-          try {
-            const activities = await fetchAllActivities(fullSessionId)
-            for (let i = activities.length - 1; i >= 0; i--) {
-              const act = activities[i]
-              if (act.artifacts && Array.isArray(act.artifacts)) {
-                for (const art of act.artifacts) {
-                  if (art.pullRequest && art.pullRequest.url) {
-                    prUrl = art.pullRequest.url
-                    break
-                  }
+        try {
+          const activities = await fetchAllActivities(fullSessionId)
+          for (let i = activities.length - 1; i >= 0; i--) {
+            const act = activities[i]
+            if (!lastUserMessage && act.userMessaged && act.userMessaged.userMessage) {
+              lastUserMessage = act.userMessaged.userMessage.trim()
+            }
+            if (!prUrl && act.artifacts && Array.isArray(act.artifacts)) {
+              for (const art of act.artifacts) {
+                if (art.pullRequest && art.pullRequest.url) {
+                  prUrl = art.pullRequest.url
+                  break
                 }
               }
-              if (prUrl) break
             }
-          } catch (err) {
-            log(`Failed to fetch activities for PR URL: ${err.message}`)
+            if (prUrl && lastUserMessage) break
           }
+        } catch (err) {
+          log(`Failed to fetch activities for /status: ${err.message}`)
         }
 
-        if (prUrl) {
-          console.log(`  \x1b[32mpr:\x1b[0m ${prUrl}`)
-        } else {
-          console.log('  \x1b[90mpr:\x1b[0m None generated yet')
-        }
-        console.log(`  \x1b[36mweb:\x1b[0m https://jules.google.com/session/${cleanId}\n`)
+        let statusMd = '# Session Status\n\n'
+        statusMd += '| Property | Value |\n| --- | --- |\n'
+        statusMd += `| **session** | ${fullSessionId} |\n`
+        if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${sourceDisplay} |\n`
+        if (branch) statusMd += `| **branch** | ${branch} |\n`
+        if (sessionInfo.title) statusMd += `| **title** | ${sessionInfo.title} |\n`
+        if (sessionInfo.state) statusMd += `| **state** | ${sessionInfo.state} |\n`
+        if (lastUserMessage) statusMd += `| **last message** | ${lastUserMessage.replace(/\|/g, '\\|').replace(/\n/g, ' ')} |\n`
+        if (sessionInfo.createTime) statusMd += `| **created** | ${sessionInfo.createTime} |\n`
+        if (sessionInfo.updateTime) statusMd += `| **updated** | ${sessionInfo.updateTime} |\n`
+        if (prUrl) statusMd += `| **pr** | ${prUrl} |\n`
+        else statusMd += '| **pr** | None generated yet |\n'
+        statusMd += `| **web** | https://jules.google.com/session/${cleanId} |\n`
+
+        console.log(`\n${renderMarkdown(statusMd)}\n`)
       } catch (err) {
         console.error(`\x1b[31m❌ Error fetching session status: ${err.message}\x1b[0m`)
       }
@@ -451,15 +492,6 @@ export async function repl (sessionId, options = {}) {
         log(`Failed to fetch current session source for /new: ${err.message}`)
       }
 
-      let expandedPrompt = promptArg
-      try {
-        expandedPrompt = expandAtFilepaths(promptArg)
-      } catch (err) {
-        console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-        rl.prompt()
-        return
-      }
-
       try {
         console.log('\n\x1b[36m🚀 Starting a new session for the same source...\x1b[0m')
         clearTimeout(tailTimeout)
@@ -468,7 +500,7 @@ export async function repl (sessionId, options = {}) {
         process.removeListener('SIGCONT', onSigCont)
 
         const newOptions = { ...options, source: sourceForNewSession || options.source }
-        const newSessionId = await createSession(expandedPrompt, sourceForNewSession, newOptions)
+        const newSessionId = await createSession(promptArg, sourceForNewSession, newOptions)
         await repl(newSessionId, newOptions)
         return
       } catch (err) {
@@ -565,8 +597,7 @@ export async function repl (sessionId, options = {}) {
       console.log('  \x1b[32m/flush\x1b[0m              Flush and send queued message(s) immediately')
       console.log('  \x1b[32m/clear\x1b[0m              Clear terminal screen')
       console.log('  \x1b[32m/web\x1b[0m                Open session URL in web browser')
-      console.log('  \x1b[32m/help\x1b[0m               Display this help message')
-      console.log('  \x1b[32m@<filepath>\x1b[0m          Inline syntax to attach file content in prompt\n')
+      console.log('  \x1b[32m/help\x1b[0m               Display this help message\n')
       rl.prompt()
       return
     }
@@ -665,15 +696,7 @@ export async function repl (sessionId, options = {}) {
       const inlineMsg = match && match[1] ? match[1].trim() : ''
 
       if (inlineMsg) {
-        let expandedMsg = inlineMsg
-        try {
-          expandedMsg = expandAtFilepaths(inlineMsg)
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-          rl.prompt()
-          return
-        }
-        messageQueue.push(expandedMsg)
+        messageQueue.push(inlineMsg)
       }
 
       if (messageQueue.length === 0) {
@@ -761,14 +784,7 @@ export async function repl (sessionId, options = {}) {
       return
     }
 
-    let promptToSend = text
-    try {
-      promptToSend = expandAtFilepaths(text)
-    } catch (err) {
-      console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-      rl.prompt()
-      return
-    }
+    const promptToSend = text
 
     if (isBusy || messageQueue.length > 0) {
       messageQueue.push(promptToSend)
@@ -814,6 +830,7 @@ export async function repl (sessionId, options = {}) {
 
   rl.on('close', () => {
     console.log('')
+    process.stdin.removeListener('data', onStdinData)
     process.removeListener('SIGCONT', onSigCont)
     clearTimeout(tailTimeout)
     process.exit(0)
@@ -823,7 +840,7 @@ export async function repl (sessionId, options = {}) {
 export function registerReplCommand (yargs) {
   return yargs.command(
     'repl [prompt]',
-    'Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help, @filepath)',
+    'Interactive shell to chat with a session (supports /upload, /approve, /rename, /flush, /help)',
     (y) => {
       return y
         .positional('prompt', { type: 'string', describe: 'Initial prompt when creating a session' })
@@ -849,14 +866,7 @@ export function registerReplCommand (yargs) {
           console.error('\x1b[31m❌ Error: A prompt argument is required when using `--create`.\x1b[0m')
           process.exit(1)
         }
-        let initialPrompt = argv.prompt
-        try {
-          initialPrompt = expandAtFilepaths(argv.prompt)
-        } catch (err) {
-          console.error(`\x1b[31m❌ Error reading file: ${err.message}\x1b[0m`)
-          process.exit(1)
-        }
-        const newSessionId = await createSession(initialPrompt, argv.source, argv)
+        const newSessionId = await createSession(argv.prompt, argv.source, argv)
         await repl(newSessionId, argv)
         return
       }

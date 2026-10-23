@@ -14,7 +14,7 @@ function stripAnsi (str) {
   return str.replace(/\x1B\[[0-9;]*[a-zA-Z]/g, '')
 }
 
-describe('Jules CLI Tests', { timeout: 120000 }, () => {
+describe('Jules CLI Tests', { timeout: 60000 }, () => {
   let server
   let serverPort
   let serverUrl
@@ -1108,65 +1108,6 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.match(res.stderr, /Session finished with state: FAILED/)
   })
 
-  test('create command with @filepath attaches local file content', async () => {
-    const tmpFile = path.join(os.tmpdir(), 'sample-create-test.txt')
-    fs.writeFileSync(tmpFile, 'hello local file content', 'utf8')
-
-    mockResponses['POST /sessions'] = {
-      status: 200,
-      body: { name: 'sessions/fileCreated123' }
-    }
-    mockResponses['GET /sessions/fileCreated123'] = {
-      status: 200,
-      body: { name: 'sessions/fileCreated123', state: 'ACTIVE', updateTime: '2025-01-01T00:00:00Z' }
-    }
-    mockResponses['GET /sessions/fileCreated123/activities'] = {
-      status: 200,
-      body: { activities: [] }
-    }
-
-    const proc = spawn('node', [JULES_BIN, 'create', `initial prompt @${tmpFile}`], {
-      env: {
-        ...process.env,
-        JULES_API_KEY: 'test-key',
-        JULES_API_URL: serverUrl,
-        JULES_DISABLE_CACHE: 'true'
-      }
-    })
-
-    let rawStdout = ''
-    proc.stdout.on('data', data => {
-      rawStdout += data.toString()
-      const clean = stripAnsi(rawStdout)
-      if (clean.includes('Jules REPL started for session')) {
-        proc.kill('SIGKILL')
-      }
-    })
-
-    await new Promise(resolve => proc.on('close', resolve))
-
-    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
-    assert.ok(postReq)
-    assert.match(postReq.body.prompt, /initial prompt @/)
-    assert.match(postReq.body.prompt, /hello local file content/)
-    assert.match(postReq.body.prompt, /--- File: .*sample-create-test.txt ---/)
-
-    fs.unlinkSync(tmpFile)
-  })
-
-  test('create command with non-existent or binary @filepath fails', async () => {
-    const res = await runCli(['create', 'prompt @/tmp/nonexistent-file-999.txt'])
-    assert.strictEqual(res.code, 1)
-    assert.match(res.stderr, /Error reading file: File not found/)
-
-    const binFile = path.join(os.tmpdir(), 'sample-image.png')
-    fs.writeFileSync(binFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))
-    const resBin = await runCli(['create', `prompt @${binFile}`])
-    assert.strictEqual(resBin.code, 1)
-    assert.match(resBin.stderr, /Binary\/image files are not supported/)
-    fs.unlinkSync(binFile)
-  })
-
   test('send command with stdin input (message argument omitted) sends prompt', async () => {
     mockResponses['GET /sessions/sendStdin123/activities'] = {
       status: 200,
@@ -1208,34 +1149,6 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     assert.strictEqual(sendMsgReq.body.prompt, 'prompt from omitted argument stdin')
   })
 
-  test('send command with @filepath attaches local file content', async () => {
-    const tmpFile = path.join(os.tmpdir(), 'sample-send-test.js')
-    fs.writeFileSync(tmpFile, 'console.log("send test");', 'utf8')
-
-    mockResponses['GET /sessions/send123/activities'] = {
-      status: 200,
-      body: { activities: [] }
-    }
-    mockResponses['POST /sessions/send123:sendMessage'] = {
-      status: 200,
-      body: {}
-    }
-    mockResponses['GET /sessions/send123'] = {
-      status: 200,
-      body: { name: 'sessions/send123', state: 'COMPLETED', updateTime: '2025-01-01T00:00:02Z' }
-    }
-
-    const res = await runCli(['send', `review file @${tmpFile}`, '-s', 'send123'])
-    assert.strictEqual(res.code, 0)
-
-    const sendReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/send123:sendMessage')
-    assert.ok(sendReq)
-    assert.match(sendReq.body.prompt, /review file @/)
-    assert.match(sendReq.body.prompt, /console\.log\("send test"\);/)
-
-    fs.unlinkSync(tmpFile)
-  })
-
   test('repl /upload command uploads local file content', async () => {
     const tmpFile = path.join(os.tmpdir(), 'repl-upload-test.txt')
     fs.writeFileSync(tmpFile, 'upload content inside repl', 'utf8')
@@ -1261,36 +1174,6 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
     const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replUp123:sendMessage')
     assert.ok(sendMsgReq)
     assert.match(sendMsgReq.body.prompt, /upload content inside repl/)
-
-    fs.unlinkSync(tmpFile)
-  })
-
-  test('repl @filepath expansion appends local file content', async () => {
-    const tmpFile = path.join(os.tmpdir(), 'repl-at-test.py')
-    fs.writeFileSync(tmpFile, 'print("at test")', 'utf8')
-
-    mockResponses['GET /sessions/replAt123'] = {
-      status: 200,
-      body: { name: 'sessions/replAt123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
-    }
-    mockResponses['GET /sessions/replAt123/activities'] = {
-      status: 200,
-      body: { activities: [] }
-    }
-    mockResponses['POST /sessions/replAt123:sendMessage'] = {
-      status: 200,
-      body: {}
-    }
-
-    await runRepl(['repl', '-s', 'replAt123'], [
-      { trigger: 'Jules REPL started for session', input: `check code @${tmpFile}` },
-      { trigger: 'Message sent... Agent is thinking', kill: true }
-    ])
-
-    const sendMsgReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions/replAt123:sendMessage')
-    assert.ok(sendMsgReq)
-    assert.match(sendMsgReq.body.prompt, /check code @/)
-    assert.match(sendMsgReq.body.prompt, /print\("at test"\)/)
 
     fs.unlinkSync(tmpFile)
   })
@@ -1409,8 +1292,24 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
         title: 'Fix Auth Bug',
         state: 'COMPLETED',
         createTime: '2025-01-01T00:00:00Z',
+        sourceContext: {
+          source: 'sources/github/owner/repo',
+          githubRepoContext: { startingBranch: 'main' }
+        },
         outputs: [
           { pullRequest: { url: 'https://github.com/owner/repo/pull/42' } }
+        ]
+      }
+    }
+    mockResponses['GET /sessions/status123/activities'] = {
+      status: 200,
+      body: {
+        activities: [
+          {
+            id: 'act1',
+            type: 'userMessaged',
+            userMessaged: { userMessage: 'Fix login issue' }
+          }
         ]
       }
     }
@@ -1420,11 +1319,14 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
       { trigger: 'https://github.com/owner/repo/pull/42', kill: true }
     ])
 
-    assert.match(stdout, /Session Status:/)
-    assert.match(stdout, /title: Fix Auth Bug/)
-    assert.match(stdout, /state: COMPLETED/)
-    assert.match(stdout, /pr: https:\/\/github\.com\/owner\/repo\/pull\/42/)
-    assert.match(stdout, /web: https:\/\/jules\.google\.com\/session\/status123/)
+    assert.match(stdout, /Session Status/)
+    assert.match(stdout, /owner\/repo/)
+    assert.match(stdout, /main/)
+    assert.match(stdout, /Fix Auth Bug/)
+    assert.match(stdout, /COMPLETED/)
+    assert.match(stdout, /Fix login issue/)
+    assert.match(stdout, /https:\/\/github\.com\/owner\/repo\/pull\/42/)
+    assert.match(stdout, /https:\/\/jules\.google\.com\/session\/status123/)
   })
 
   test('jules pr command displays PR URL', async () => {
@@ -1470,7 +1372,7 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     const { stdout } = await runRepl(['repl', '-s', 'replHelp123'], [
       { trigger: 'Jules REPL started for session', input: '/help' },
-      { trigger: '@<filepath>', kill: true }
+      { trigger: 'Display this help message', kill: true }
     ])
 
     assert.match(stdout, /Available REPL Commands:/)
@@ -1609,29 +1511,6 @@ describe('Jules CLI Tests', { timeout: 120000 }, () => {
 
     assert.match(stdout, /Latest Patch Artifact/)
     assert.match(stdout, /\+bar/)
-  })
-
-  test('@filepath expansion ignores email addresses and non-path tokens', async () => {
-    mockResponses['POST /sessions'] = {
-      status: 200,
-      body: { name: 'sessions/email123' }
-    }
-    mockResponses['GET /sessions/email123'] = {
-      status: 200,
-      body: { name: 'sessions/email123', state: 'AWAITING_USER_INPUT', updateTime: '2025-01-01T00:00:00Z' }
-    }
-    mockResponses['GET /sessions/email123/activities'] = {
-      status: 200,
-      body: { activities: [] }
-    }
-
-    await runRepl(['create', 'contact me at foo@example.com for info'], [
-      { trigger: 'Jules REPL started for session', kill: true }
-    ])
-
-    const postReq = mockRequests.find(r => r.method === 'POST' && r.url === '/sessions')
-    assert.ok(postReq)
-    assert.strictEqual(postReq.body.prompt, 'contact me at foo@example.com for info')
   })
 
   test('repl prompt label formats as source when source is present and sessionId when source is absent', async () => {
