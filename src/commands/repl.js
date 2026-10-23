@@ -212,7 +212,7 @@ export async function repl (sessionId, options = {}) {
         await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
         console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
       } catch (err) {
-        console.error(`\x1b[31mError sending queued messages: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error sending queued messages:** ${err.message}`))
         isBusy = false
       }
     }
@@ -254,7 +254,7 @@ export async function repl (sessionId, options = {}) {
             try {
               await printActivity(i, activities[i], fullSessionId, { ...options, activities })
             } catch (err) {
-              console.error(`\x1b[31mError in REPL background loop: ${err.message}\x1b[0m`)
+              console.log(renderMarkdown(`❌ **Error in REPL background loop:** ${err.message}`))
             }
           }
           lastSeenActivityIndex = activities.length - 1
@@ -265,11 +265,11 @@ export async function repl (sessionId, options = {}) {
         if (options.gitPull && !hasPulledForWork && hasJulesFinishedWork(activities, session)) {
           hasPulledForWork = true
           try {
-            console.error('\x1b[36mJules is done with work. Running \'git pull\'...\x1b[0m')
+            console.log(renderMarkdown('Jules is done with work. Running `git pull`...'))
             const output = execSync('git pull', { encoding: 'utf8' })
-            console.error(output)
+            console.log(output)
           } catch (err) {
-            console.error(`\x1b[31m❌ Error running 'git pull': ${err.message}\x1b[0m`)
+            console.log(renderMarkdown(`❌ **Error running 'git pull':** ${err.message}`))
           }
         }
       }
@@ -334,7 +334,7 @@ export async function repl (sessionId, options = {}) {
       const knownCommands = ['/archive', '/status', '/web', '/clear', '/diff', '/help', '/color', '/edit', '/queue', '/rename', '/flush', '/send', '/now', '/approve', '/upload', '/history', '/new', '/pr', '/notify', '/autosend']
       const cmdToken = text.split(/\s+/)[0].toLowerCase()
       if (!knownCommands.includes(cmdToken)) {
-        console.error(`\x1b[33m⚠️ Warning: Unknown REPL command '${cmdToken}'. Type /help to list available commands.\x1b[0m`)
+        console.log(renderMarkdown(`⚠️ **Warning:** Unknown REPL command \`${cmdToken}\`. Type \`/help\` to list available commands.`))
         rl.prompt()
         return
       }
@@ -346,7 +346,7 @@ export async function repl (sessionId, options = {}) {
         console.log('\x1b[32m✔ Session archived.\x1b[0m')
         rl.close()
       } catch (err) {
-        console.error(`\x1b[31m❌ Error archiving session: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error archiving session:** ${err.message}`))
         rl.prompt()
       }
       return
@@ -425,7 +425,7 @@ export async function repl (sessionId, options = {}) {
 
         console.log(`\n${renderMarkdown(statusMd)}\n`)
       } catch (err) {
-        console.error(`\x1b[31m❌ Error fetching session status: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error fetching session status:** ${err.message}`))
       }
       rl.prompt()
       return
@@ -513,7 +513,7 @@ export async function repl (sessionId, options = {}) {
           console.log('')
         }
       } catch (err) {
-        console.error(`\x1b[31m❌ Error fetching history: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error fetching history:** ${err.message}`))
       }
       rl.prompt()
       return
@@ -524,7 +524,7 @@ export async function repl (sessionId, options = {}) {
       const promptArg = match && match[1] ? match[1].trim() : ''
 
       if (!promptArg) {
-        console.error('\x1b[31m❌ Error: /new requires a prompt message argument (e.g. /new Fix login bug).\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** `/new` requires a prompt message argument (e.g. `/new Fix login bug`).'))
         rl.prompt()
         return
       }
@@ -580,7 +580,7 @@ export async function repl (sessionId, options = {}) {
         tailTimeout = setTimeout(poll, 0)
         return
       } catch (err) {
-        console.error(`\x1b[31m❌ Error creating new session: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error creating new session:** ${err.message}`))
         rl.prompt()
         return
       }
@@ -626,7 +626,7 @@ export async function repl (sessionId, options = {}) {
           console.log('\x1b[90mNo pull request URL found for this session.\x1b[0m\n')
         }
       } catch (err) {
-        console.error(`\x1b[31m❌ Error fetching PR URL: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error fetching PR URL:** ${err.message}`))
       }
       rl.prompt()
       return
@@ -638,18 +638,18 @@ export async function repl (sessionId, options = {}) {
 
       if (arg === 'on' || arg === 'true' || arg === 'enable') {
         options.notify = true
-        console.error('\x1b[32m✔ Desktop notifications enabled.\x1b[0m')
+        console.log(renderMarkdown('✔ **Desktop notifications enabled.**'))
       } else if (arg === 'off' || arg === 'false' || arg === 'disable') {
         options.notify = false
-        console.error('\x1b[32m✔ Desktop notifications disabled.\x1b[0m')
+        console.log(renderMarkdown('✔ **Desktop notifications disabled.**'))
       } else if (arg === 'status') {
         const isEnabled = options.notify !== false && process.env.JULES_NOTIFY !== 'false' && process.env.JULES_NOTIFY !== '0'
-        console.log(`\x1b[36mDesktop notifications status:\x1b[0m ${isEnabled ? 'enabled' : 'disabled'}`)
+        console.log(renderMarkdown(`**Desktop notifications status:** ${isEnabled ? 'enabled' : 'disabled'}`))
       } else if (!arg) {
         options.notify = !(options.notify !== false)
-        console.error(`\x1b[32m✔ Desktop notifications ${options.notify ? 'enabled' : 'disabled'}.\x1b[0m`)
+        console.log(renderMarkdown(`✔ **Desktop notifications ${options.notify ? 'enabled' : 'disabled'}.**`))
       } else {
-        console.error('\x1b[31m❌ Error: Invalid argument for /notify. Usage: /notify [on|off|status]\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** Invalid argument for `/notify`. Usage: `/notify [on|off|status]`'))
       }
       safePrompt()
       return
@@ -685,7 +685,7 @@ export async function repl (sessionId, options = {}) {
       const colorArg = parts[1] ? parts[1].toLowerCase() : ''
 
       if (!colorArg || !bgColors[colorArg]) {
-        console.error('\x1b[31m❌ Error: Please specify a valid color: green, cyan, blue, yellow, magenta, red, white, default, reset.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** Please specify a valid color: green, cyan, blue, yellow, magenta, red, white, default, reset.'))
         rl.prompt()
         return
       }
@@ -694,7 +694,7 @@ export async function repl (sessionId, options = {}) {
       sessionState.color = colorArg
       saveSessionState(fullSessionId, sessionState)
       updatePrompt()
-      console.error(`\x1b[32m✔ REPL prompt color set to ${colorArg}.\x1b[0m`)
+      console.log(renderMarkdown(`✔ **REPL prompt color set to ${colorArg}.**`))
       rl.prompt()
       return
     }
@@ -702,8 +702,8 @@ export async function repl (sessionId, options = {}) {
     if (text === '/edit') {
       const editor = process.env.EDITOR
       if (!editor) {
-        console.error('\x1b[31m❌ Error: Cannot use /edit because `$EDITOR` environment variable is not defined.\x1b[0m')
-        console.error('\x1b[90mPlease set `$EDITOR` in your environment (e.g. export EDITOR=vim) to enable editing queued messages in your terminal.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** Cannot use `/edit` because `$EDITOR` environment variable is not defined.'))
+        console.log(renderMarkdown('Please set `$EDITOR` in your environment (e.g. `export EDITOR=vim`) to enable editing queued messages in your terminal.'))
         rl.prompt()
         return
       }
@@ -724,14 +724,14 @@ export async function repl (sessionId, options = {}) {
           const parts = editedContent.split(/\n\s*---\s*\n/).map(s => s.trim()).filter(Boolean)
           messageQueue.push(...parts)
           saveQueue(fullSessionId, messageQueue)
-          console.error(`\x1b[32m✔ Queue updated via editor (${messageQueue.length} message(s)).\x1b[0m`)
+          console.log(renderMarkdown(`✔ **Queue updated via editor** (${messageQueue.length} message(s)).`))
         } else {
           saveQueue(fullSessionId, messageQueue)
-          console.error('\x1b[32m✔ File saved empty. Queue cleared.\x1b[0m')
+          console.log(renderMarkdown('✔ **File saved empty. Queue cleared.**'))
         }
         updatePrompt()
       } catch (err) {
-        console.error(`\x1b[31m❌ Error editing queue in $EDITOR: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error editing queue in $EDITOR:** ${err.message}`))
       } finally {
         try { if (fs.existsSync(tmpFile)) fs.unlinkSync(tmpFile) } catch (e) {}
       }
@@ -747,21 +747,16 @@ export async function repl (sessionId, options = {}) {
         autoSend = true
         sessionState.autoSend = true
         saveSessionState(fullSessionId, sessionState)
-        console.log('\x1b[32m✔ Auto-sending queued messages on idle enabled.\x1b[0m')
+        console.log(renderMarkdown('✔ **Auto-sending queued messages on idle enabled.**'))
       } else if (arg === 'off' || arg === 'false' || arg === 'disable') {
         autoSend = false
         sessionState.autoSend = false
         saveSessionState(fullSessionId, sessionState)
-        console.log('\x1b[32m✔ Auto-sending queued messages on idle disabled.\x1b[0m')
-      } else if (arg === 'status') {
-        console.log(`\x1b[36mAuto-send on idle status:\x1b[0m ${autoSend ? 'enabled' : 'disabled'}`)
-      } else if (!arg) {
-        autoSend = !autoSend
-        sessionState.autoSend = autoSend
-        saveSessionState(fullSessionId, sessionState)
-        console.log(`\x1b[32m✔ Auto-sending queued messages on idle ${autoSend ? 'enabled' : 'disabled'}.\x1b[0m`)
+        console.log(renderMarkdown('✔ **Auto-sending queued messages on idle disabled.**'))
+      } else if (arg === 'status' || !arg) {
+        console.log(renderMarkdown(`**Auto-send on idle status:** ${autoSend ? 'enabled' : 'disabled'}`))
       } else {
-        console.error('\x1b[31m❌ Error: Invalid argument for /autosend. Usage: /autosend [on|off|status]\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** Invalid argument for `/autosend`. Usage: `/autosend [on|off|status]`'))
       }
       rl.prompt()
       return
@@ -813,7 +808,7 @@ export async function repl (sessionId, options = {}) {
         saveSessionState(fullSessionId, sessionState)
         console.log('\x1b[32m✔ Auto-send on idle set to: manual (requires /send to dispatch).\x1b[0m')
       } else {
-        console.error(`\x1b[31m❌ Error: Unknown queue strategy '${strategy}'. Valid strategies: direct, buffered, bulk, single, auto, manual.\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error:** Unknown queue strategy \`${strategy}\`. Valid strategies: \`direct\`, \`buffered\`, \`bulk\`, \`single\`, \`auto\`, \`manual\`.`))
       }
       rl.prompt()
       return
@@ -822,7 +817,7 @@ export async function repl (sessionId, options = {}) {
     if (text.startsWith('/rename')) {
       const newName = text.slice(7).trim()
       if (!newName) {
-        console.error('\x1b[31m❌ Error: /rename requires a <name> argument.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** `/rename` requires a `<name>` argument.'))
         rl.prompt()
         return
       }
@@ -842,12 +837,12 @@ export async function repl (sessionId, options = {}) {
       if (/^\d+$/.test(arg)) {
         const targetIndex = parseInt(arg, 10) - 1
         if (messageQueue.length === 0) {
-          console.error('\x1b[31m❌ Error: No queued messages to send.\x1b[0m')
+          console.log(renderMarkdown('❌ **Error:** No queued messages to send.'))
           rl.prompt()
           return
         }
         if (targetIndex < 0 || targetIndex >= messageQueue.length) {
-          console.error(`\x1b[31m❌ Error: Invalid queue index ${arg}. Valid range: 1 to ${messageQueue.length}.\x1b[0m`)
+          console.log(renderMarkdown(`❌ **Error:** Invalid queue index \`${arg}\`. Valid range: 1 to ${messageQueue.length}.`))
           rl.prompt()
           return
         }
@@ -862,7 +857,7 @@ export async function repl (sessionId, options = {}) {
           await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
           console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
         } catch (err) {
-          console.error(`\x1b[31mError sending queued message: ${err.message}\x1b[0m`)
+          console.log(renderMarkdown(`❌ **Error sending queued message:** ${err.message}`))
           isBusy = false
         }
         clearTimeout(tailTimeout)
@@ -884,7 +879,7 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (messageQueue.length === 0) {
-        console.error('\x1b[31m❌ Error: No queued messages to send.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** No queued messages to send.'))
         rl.prompt()
         return
       }
@@ -907,7 +902,7 @@ export async function repl (sessionId, options = {}) {
           await poll()
         }, 2000)
       } catch (err) {
-        console.error(`\x1b[31m❌ Error approving plan: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error approving plan:** ${err.message}`))
       }
       rl.prompt()
       return
@@ -916,12 +911,12 @@ export async function repl (sessionId, options = {}) {
     if (text.startsWith('/upload')) {
       const parts = text.split(/\s+/).filter(Boolean)
       if (parts.length === 1) {
-        console.error('\x1b[31m❌ Error: /upload requires a <filepath> argument.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** `/upload` requires a `<filepath>` argument.'))
         rl.prompt()
         return
       }
       if (parts.length > 2) {
-        console.error('\x1b[31m❌ Error: /upload expects strictly 1 argument (<filepath>). Additional text or arguments are not allowed.\x1b[0m')
+        console.log(renderMarkdown('❌ **Error:** `/upload` expects strictly 1 argument (`<filepath>`). Additional text or arguments are not allowed.'))
         rl.prompt()
         return
       }
@@ -945,12 +940,12 @@ export async function repl (sessionId, options = {}) {
               await poll()
             }, 2000)
           } catch (err) {
-            console.error(`\x1b[31mError sending file message: ${err.message}\x1b[0m`)
+            console.log(renderMarkdown(`❌ **Error sending file message:** ${err.message}`))
             isBusy = false
           }
         }
       } catch (err) {
-        console.error(`\x1b[31m❌ Error uploading file: ${err.message}\x1b[0m`)
+        console.log(renderMarkdown(`❌ **Error uploading file:** ${err.message}`))
       }
       rl.prompt()
       return
@@ -1003,7 +998,7 @@ export async function repl (sessionId, options = {}) {
         await poll()
       }, 2000)
     } catch (err) {
-      console.error(`\x1b[31mError sending message: ${err.message}\x1b[0m`)
+      console.log(renderMarkdown(`❌ **Error sending message:** ${err.message}`))
       isBusy = false
     }
     rl.prompt()

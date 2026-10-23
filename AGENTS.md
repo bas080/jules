@@ -1,5 +1,9 @@
 # AGENTS.md
 
+## About Project Jules
+
+Project Jules is an open-source command-line interface (CLI) and interactive REPL client for [Google Jules](https://jules.google.com/). It allows developers to create, monitor, and interact with AI coding sessions directly from their terminal.
+
 ## Project Documentation
 
 Detailed information regarding Project Jules, its architecture, CLI usage, commands, and technical stack can be found in [`docs/project.md`](docs/project.md).
