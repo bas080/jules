@@ -11,6 +11,7 @@
     "test:unit": "node --test test/unit/**/*.test.*",
     "test:integration": "node --test test/integration/**/*.test.*",
     "lint": "standard",
+    "complexity": "clines complexity src",
     "coverage": "c8 node --test --test-timeout=60000"
   },
   "dependencies": {
@@ -20,11 +21,12 @@
     "marked": "^15.0.12",
     "marked-terminal": "^7.3.0",
     "node-fetch-cache": "^5.1.1",
-    "node-notifier": "^10.0.1",
+    "node-notifier": "^11.0.0",
     "yargs": "^18.2.0"
   },
   "devDependencies": {
     "c8": "^10.0.0",
+    "clines": "^5.12.3",
     "standard": "^17.1.2"
   }
 }
