@@ -101,10 +101,6 @@ export async function repl (sessionId, options = {}) {
   let lastSeenActivityIndex = -1
   let lastState = null
   let lastUpdateTime = null
-  let idlePollCount = 0
-  let isPollingPaused = false
-  const maxIdlePolls = 20
-
   let queueDispatch = (options.queueDispatch || options['queue-dispatch'] || process.env.JULES_QUEUE_DISPATCH || sessionState.queueDispatch || 'bulk').toLowerCase()
   if (queueDispatch !== 'single' && queueDispatch !== 'one') queueDispatch = 'bulk'
 
@@ -123,22 +119,24 @@ export async function repl (sessionId, options = {}) {
   let lastMessageSentTime = 0
   const sendCooldown = process.env.JULES_SEND_COOLDOWN ? parseInt(process.env.JULES_SEND_COOLDOWN, 10) : (process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000)
 
-  function resumePolling () {
-    const wasPaused = isPollingPaused
-    idlePollCount = 0
-    if (wasPaused) {
-      isPollingPaused = false
+  const minPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 1000
+  const maxPollInterval = 300000
+  let currentPollInterval = minPollInterval
+  let lastInteractionTime = Date.now()
+
+  function resetPollingSpeed () {
+    const isSlow = currentPollInterval > minPollInterval
+    lastInteractionTime = Date.now()
+    if (isSlow) {
+      currentPollInterval = minPollInterval
       lastUpdateTime = null
-      printAbovePrompt(() => {
-        console.log('\n\x1b[36m⏰ Activity detected. Waking up and checking for session updates...\x1b[0m')
-      })
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(poll, 0)
     }
   }
 
   const onStdinData = () => {
-    resumePolling()
+    resetPollingSpeed()
   }
   process.stdin.on('data', onStdinData)
 
@@ -272,9 +270,6 @@ export async function repl (sessionId, options = {}) {
     }
   }
 
-  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
-  let currentPollInterval = basePollInterval
-
   async function poll () {
     try {
       const session = await apiRequest(fullSessionId, 'GET', null, true)
@@ -299,7 +294,6 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (session.updateTime !== lastUpdateTime) {
-        idlePollCount = 0
         const activities = await fetchAllActivities(fullSessionId)
 
         if (lastSeenActivityIndex === -1 && !options.history) {
@@ -354,32 +348,17 @@ export async function repl (sessionId, options = {}) {
         }
       }
 
-      if (!isBusy && (session.state === 'AWAITING_USER_INPUT' || session.state === 'AWAITING_USER_FEEDBACK' || session.state === 'COMPLETED' || session.state === 'FAILED' || session.state === 'CANCELLED')) {
-        idlePollCount++
-        if (idlePollCount >= maxIdlePolls) {
-          if (autoSend) {
-            currentPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000
-            if (idlePollCount === maxIdlePolls) {
-              printAbovePrompt(() => {
-                console.log('\n\x1b[36m💤 Idle mode: Auto-send active. Checking Jules status every minute...\x1b[0m\n')
-              })
-            }
-          } else {
-            if (!isPollingPaused) {
-              isPollingPaused = true
-              printAbovePrompt(() => {
-                console.log('\n\x1b[33m💤 REPL background polling paused due to inactivity.\x1b[0m')
-                console.log('\x1b[90m💡 Press Enter or type a message to wake up and fetch latest session updates.\x1b[0m\n')
-              })
-            }
-            log('Polling paused due to idle inactivity. Waiting for user interaction to resume.')
-            return
-          }
-        } else {
-          currentPollInterval = basePollInterval
-        }
+      if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE' || isBusy) {
+        currentPollInterval = minPollInterval
       } else {
-        currentPollInterval = basePollInterval
+        const timeSinceInteraction = Date.now() - lastInteractionTime
+        if (timeSinceInteraction > 10000) {
+          currentPollInterval = process.env.JULES_POLL_INTERVAL
+            ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
+            : Math.min(maxPollInterval, Math.round(currentPollInterval * 1.5))
+        } else {
+          currentPollInterval = minPollInterval
+        }
       }
     } catch (err) {
       if (isRateLimitError(err)) {
@@ -397,7 +376,7 @@ export async function repl (sessionId, options = {}) {
   let tailTimeout = setTimeout(poll, 0)
 
   rl.on('line', async (line) => {
-    resumePolling()
+    resetPollingSpeed()
     const text = line.trim()
     if (!text) {
       rl.prompt()
@@ -643,7 +622,6 @@ export async function repl (sessionId, options = {}) {
         lastSeenActivityIndex = -1
         lastState = null
         lastUpdateTime = null
-        idlePollCount = 0
         isBusy = true
         hasPulledForWork = false
 
@@ -937,7 +915,7 @@ export async function repl (sessionId, options = {}) {
         clearTimeout(tailTimeout)
         tailTimeout = setTimeout(async () => {
           await poll()
-        }, Math.min(2000, basePollInterval))
+        }, Math.min(2000, minPollInterval))
         rl.prompt()
         return
       }
@@ -962,7 +940,7 @@ export async function repl (sessionId, options = {}) {
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(async () => {
         await poll()
-      }, Math.min(2000, basePollInterval))
+      }, Math.min(2000, minPollInterval))
       rl.prompt()
       return
     }
