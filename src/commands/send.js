@@ -3,9 +3,6 @@ import {
   fetchAllActivities,
   printActivity,
   readStdin,
-  isRateLimitError,
-  getNextRateLimitInterval,
-  stepDownPollInterval,
   handlePollingError
 } from '../common.js'
 
@@ -34,8 +31,7 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
   let hasStarted = false
   const startIndex = lastSeenActivityIndex
 
-  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
-  let currentPollInterval = basePollInterval
+  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
 
   while (true) {
     try {
@@ -87,14 +83,10 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
         console.error('\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n')
         process.exit(0)
       }
-      currentPollInterval = stepDownPollInterval(currentPollInterval, basePollInterval)
     } catch (err) {
-      if (isRateLimitError(err)) {
-        currentPollInterval = getNextRateLimitInterval(currentPollInterval, basePollInterval)
-      }
       handlePollingError(err, 'send command')
     }
-    await new Promise((resolve) => setTimeout(resolve, currentPollInterval))
+    await new Promise((resolve) => setTimeout(resolve, pollInterval))
   }
 }
 
