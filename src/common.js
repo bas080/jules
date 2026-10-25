@@ -302,6 +302,18 @@ export function isRateLimitError (err) {
   return Boolean((err && err.status === 429) || (err && err.message && err.message.includes('429')))
 }
 
+export function getNextRateLimitInterval (currentInterval, baseInterval = 3000, maxInterval = 30000) {
+  if (process.env.JULES_POLL_INTERVAL) {
+    return parseInt(process.env.JULES_POLL_INTERVAL, 10)
+  }
+  const minBackoff = baseInterval * 2
+  return Math.min(Math.max(currentInterval * 2, minBackoff), maxInterval)
+}
+
+export function stepDownPollInterval (currentInterval, baseInterval = 3000) {
+  return Math.max(baseInterval, Math.round(currentInterval / 1.5))
+}
+
 export function handlePollingError (err, context = 'background loop') {
   if (isRateLimitError(err)) {
     if (process.env.DEBUG) {

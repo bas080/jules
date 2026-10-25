@@ -1,4 +1,4 @@
-import { fetchSessions, apiRequest, fetchAllActivities, printActivity, isRateLimitError, handlePollingError, sendDesktopNotification, formatSourceDisplay } from '../common.js'
+import { fetchSessions, apiRequest, fetchAllActivities, printActivity, isRateLimitError, getNextRateLimitInterval, stepDownPollInterval, handlePollingError, sendDesktopNotification, formatSourceDisplay } from '../common.js'
 
 export async function tail (sessionId, options = {}) {
   process.title = 'jules-tail'
@@ -47,10 +47,10 @@ export async function tail (sessionId, options = {}) {
         }
         lastUpdateTime = session.updateTime
       }
-      currentPollInterval = Math.max(basePollInterval, Math.round(currentPollInterval / 1.5))
+      currentPollInterval = stepDownPollInterval(currentPollInterval, basePollInterval)
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(Math.max(currentPollInterval * 2, basePollInterval * 2), 30000)
+        currentPollInterval = getNextRateLimitInterval(currentPollInterval, basePollInterval)
       }
       handlePollingError(err, 'tail command')
     }

@@ -12,6 +12,8 @@ import {
   hasJulesFinishedWork,
   openUrlInBrowser,
   isRateLimitError,
+  getNextRateLimitInterval,
+  stepDownPollInterval,
   handlePollingError,
   readAndFormatLocalFile,
   formatSourceDisplay,
@@ -349,7 +351,7 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE' || isBusy) {
-        currentPollInterval = Math.max(minPollInterval, Math.round(currentPollInterval / 1.5))
+        currentPollInterval = stepDownPollInterval(currentPollInterval, minPollInterval)
       } else {
         const timeSinceInteraction = Date.now() - lastInteractionTime
         if (timeSinceInteraction > 10000) {
@@ -358,14 +360,12 @@ export async function repl (sessionId, options = {}) {
             : Math.min(maxPollInterval, Math.round(Math.max(currentPollInterval, minPollInterval) * 1.5))
           currentPollInterval = targetInterval
         } else {
-          currentPollInterval = Math.max(minPollInterval, Math.round(currentPollInterval / 1.5))
+          currentPollInterval = stepDownPollInterval(currentPollInterval, minPollInterval)
         }
       }
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL
-          ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
-          : Math.min(Math.max(currentPollInterval * 2, minPollInterval * 2), 30000)
+        currentPollInterval = getNextRateLimitInterval(currentPollInterval, minPollInterval, maxPollInterval)
       }
       handlePollingError(err, 'REPL background loop')
       safePrompt(true)

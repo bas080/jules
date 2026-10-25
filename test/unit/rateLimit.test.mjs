@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert'
-import { isRateLimitError, handlePollingError } from '../../src/common.js'
+import { isRateLimitError, getNextRateLimitInterval, stepDownPollInterval, handlePollingError } from '../../src/common.js'
 
 describe('rateLimit Unit Tests', () => {
   let stdoutLogs = []
@@ -8,6 +8,7 @@ describe('rateLimit Unit Tests', () => {
   let originalConsoleLog = console.log
   let originalConsoleError = console.error
   let originalDebug = process.env.DEBUG
+  let originalPollInterval = process.env.JULES_POLL_INTERVAL
 
   beforeEach(() => {
     stdoutLogs = []
@@ -15,7 +16,9 @@ describe('rateLimit Unit Tests', () => {
     originalConsoleLog = console.log
     originalConsoleError = console.error
     originalDebug = process.env.DEBUG
+    originalPollInterval = process.env.JULES_POLL_INTERVAL
     delete process.env.DEBUG
+    delete process.env.JULES_POLL_INTERVAL
 
     console.log = (...args) => {
       stdoutLogs.push(args.join(' '))
@@ -33,6 +36,11 @@ describe('rateLimit Unit Tests', () => {
     } else {
       delete process.env.DEBUG
     }
+    if (originalPollInterval !== undefined) {
+      process.env.JULES_POLL_INTERVAL = originalPollInterval
+    } else {
+      delete process.env.JULES_POLL_INTERVAL
+    }
   })
 
   test('isRateLimitError correctly identifies 429 status and message errors', () => {
@@ -41,6 +49,21 @@ describe('rateLimit Unit Tests', () => {
     assert.strictEqual(isRateLimitError({ status: 500 }), false)
     assert.strictEqual(isRateLimitError(new Error('Internal error')), false)
     assert.strictEqual(isRateLimitError(null), false)
+  })
+
+  test('getNextRateLimitInterval doubles interval up to maxInterval', () => {
+    assert.strictEqual(getNextRateLimitInterval(3000, 3000, 30000), 6000)
+    assert.strictEqual(getNextRateLimitInterval(6000, 3000, 30000), 12000)
+    assert.strictEqual(getNextRateLimitInterval(20000, 3000, 30000), 30000)
+
+    process.env.JULES_POLL_INTERVAL = '50'
+    assert.strictEqual(getNextRateLimitInterval(3000, 3000, 30000), 50)
+  })
+
+  test('stepDownPollInterval gradually decreases interval back to baseInterval', () => {
+    assert.strictEqual(stepDownPollInterval(6000, 3000), 4000)
+    assert.strictEqual(stepDownPollInterval(4000, 3000), 3000)
+    assert.strictEqual(stepDownPollInterval(3000, 3000), 3000)
   })
 
   test('handlePollingError prints 429 rate limit warning to stdout (console.log)', () => {
