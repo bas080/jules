@@ -119,7 +119,7 @@ export async function repl (sessionId, options = {}) {
   let lastMessageSentTime = 0
   const sendCooldown = process.env.JULES_SEND_COOLDOWN ? parseInt(process.env.JULES_SEND_COOLDOWN, 10) : (process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000)
 
-  const minPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 1000
+  const minPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
   const maxPollInterval = 300000
   let currentPollInterval = minPollInterval
   let lastInteractionTime = Date.now()
@@ -349,20 +349,23 @@ export async function repl (sessionId, options = {}) {
       }
 
       if (session.state === 'IN_PROGRESS' || session.state === 'ACTIVE' || isBusy) {
-        currentPollInterval = minPollInterval
+        currentPollInterval = Math.max(minPollInterval, Math.round(currentPollInterval / 1.5))
       } else {
         const timeSinceInteraction = Date.now() - lastInteractionTime
         if (timeSinceInteraction > 10000) {
-          currentPollInterval = process.env.JULES_POLL_INTERVAL
+          const targetInterval = process.env.JULES_POLL_INTERVAL
             ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
-            : Math.min(maxPollInterval, Math.round(currentPollInterval * 1.5))
+            : Math.min(maxPollInterval, Math.round(Math.max(currentPollInterval, minPollInterval) * 1.5))
+          currentPollInterval = targetInterval
         } else {
-          currentPollInterval = minPollInterval
+          currentPollInterval = Math.max(minPollInterval, Math.round(currentPollInterval / 1.5))
         }
       }
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = Math.min(currentPollInterval * 2, 30000)
+        currentPollInterval = process.env.JULES_POLL_INTERVAL
+          ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
+          : Math.min(Math.max(currentPollInterval * 2, minPollInterval * 2), 30000)
       }
       handlePollingError(err, 'REPL background loop')
       safePrompt(true)

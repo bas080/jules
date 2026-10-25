@@ -85,10 +85,10 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
         console.error('\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n')
         process.exit(0)
       }
-      currentPollInterval = basePollInterval
+      currentPollInterval = Math.max(basePollInterval, Math.round(currentPollInterval / 1.5))
     } catch (err) {
       if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000)
+        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(Math.max(currentPollInterval * 2, basePollInterval * 2), 30000)
       }
       handlePollingError(err, 'send command')
     }

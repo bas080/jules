@@ -145,7 +145,7 @@ export async function readStdin () {
   })
 }
 
-export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 2) {
+export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 3) {
   const disableCacheEnv = process.env.JULES_DISABLE_CACHE === 'true' || process.env.JULES_DISABLE_CACHE === '1'
   const isMutation = method.toUpperCase() !== 'GET'
   const shouldBypass = bypassCache || disableCacheEnv || isMutation
@@ -172,7 +172,7 @@ export async function apiRequest (endpoint, method = 'GET', body = null, bypassC
       log(`API Error: ${res.status} - ${errorText}`)
       if (res.status === 429 && attempt < retries) {
         attempt++
-        const backoffDelay = process.env.JULES_POLL_INTERVAL ? 10 : attempt * 2000
+        const backoffDelay = process.env.JULES_POLL_INTERVAL ? 10 : Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 500)
         log(`HTTP 429 encountered in apiRequest. Retrying in ${backoffDelay}ms (attempt ${attempt}/${retries})...`)
         await new Promise((resolve) => setTimeout(resolve, backoffDelay))
         continue
@@ -299,15 +299,15 @@ export function openUrlInBrowser (url) {
 }
 
 export function isRateLimitError (err) {
-  return (err && err.status === 429) || (err && err.message && err.message.includes('429'))
+  return Boolean((err && err.status === 429) || (err && err.message && err.message.includes('429')))
 }
 
 export function handlePollingError (err, context = 'background loop') {
   if (isRateLimitError(err)) {
     if (process.env.DEBUG) {
-      console.error(`\x1b[31mError in ${context}: ${err.message}\x1b[0m`)
+      console.log(`\x1b[31mError in ${context}: ${err.message}\x1b[0m`)
     } else {
-      console.error('\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m')
+      console.log('\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m')
     }
   } else if (err.message && err.message.includes('API Error (404)')) {
     log('Resource not yet available (404), retrying...')
