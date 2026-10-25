@@ -145,7 +145,7 @@ export async function readStdin () {
   })
 }
 
-export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 3) {
+export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 5) {
   const disableCacheEnv = process.env.JULES_DISABLE_CACHE === 'true' || process.env.JULES_DISABLE_CACHE === '1'
   const isMutation = method.toUpperCase() !== 'GET'
   const shouldBypass = bypassCache || disableCacheEnv || isMutation
@@ -172,8 +172,15 @@ export async function apiRequest (endpoint, method = 'GET', body = null, bypassC
       log(`API Error: ${res.status} - ${errorText}`)
       if (res.status === 429 && attempt < retries) {
         attempt++
-        const backoffDelay = process.env.JULES_POLL_INTERVAL ? 10 : Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 500)
-        log(`HTTP 429 encountered in apiRequest. Retrying in ${backoffDelay}ms (attempt ${attempt}/${retries})...`)
+        if (process.env.DEBUG) {
+          console.log(`\x1b[31mError in apiRequest (${endpoint}): HTTP 429 - ${errorText}\x1b[0m`)
+        } else {
+          console.log('\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m')
+        }
+        const backoffDelay = process.env.JULES_POLL_INTERVAL
+          ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
+          : Math.min(30000, Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 500))
+        log(`HTTP 429 encountered in apiRequest (${endpoint}). Retrying in ${backoffDelay}ms (attempt ${attempt}/${retries})...`)
         await new Promise((resolve) => setTimeout(resolve, backoffDelay))
         continue
       }

@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert'
-import { isRateLimitError, getNextRateLimitInterval, stepDownPollInterval, handlePollingError } from '../../src/common.js'
+import { apiRequest, isRateLimitError, getNextRateLimitInterval, stepDownPollInterval, handlePollingError } from '../../src/common.js'
 
 describe('rateLimit Unit Tests', () => {
   let stdoutLogs = []
@@ -9,6 +9,7 @@ describe('rateLimit Unit Tests', () => {
   let originalConsoleError = console.error
   let originalDebug = process.env.DEBUG
   let originalPollInterval = process.env.JULES_POLL_INTERVAL
+  let originalFetch = global.fetch
 
   beforeEach(() => {
     stdoutLogs = []
@@ -17,6 +18,7 @@ describe('rateLimit Unit Tests', () => {
     originalConsoleError = console.error
     originalDebug = process.env.DEBUG
     originalPollInterval = process.env.JULES_POLL_INTERVAL
+    originalFetch = global.fetch
     delete process.env.DEBUG
     delete process.env.JULES_POLL_INTERVAL
 
@@ -31,6 +33,7 @@ describe('rateLimit Unit Tests', () => {
   afterEach(() => {
     console.log = originalConsoleLog
     console.error = originalConsoleError
+    global.fetch = originalFetch
     if (originalDebug !== undefined) {
       process.env.DEBUG = originalDebug
     } else {
@@ -92,5 +95,31 @@ describe('rateLimit Unit Tests', () => {
     assert.strictEqual(stdoutLogs.length, 0)
     assert.strictEqual(stderrLogs.length, 1)
     assert.match(stderrLogs[0], /Error in background loop: Database connection failed/)
+  })
+
+  test('apiRequest retries HTTP 429 internally and logs warning to stdout', async () => {
+    process.env.JULES_POLL_INTERVAL = '1'
+    let attempts = 0
+    global.fetch = async () => {
+      attempts++
+      if (attempts === 1) {
+        return {
+          ok: false,
+          status: 429,
+          text: async () => 'Rate limit exceeded'
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true })
+      }
+    }
+
+    const data = await apiRequest('test-endpoint', 'GET', null, true)
+    assert.deepStrictEqual(data, { success: true })
+    assert.strictEqual(attempts, 2)
+    assert.strictEqual(stdoutLogs.length, 1)
+    assert.match(stdoutLogs[0], /Rate limit reached \(HTTP 429\)\. Retrying with backoff\.\.\./)
   })
 })
