@@ -145,7 +145,7 @@ export async function readStdin () {
   })
 }
 
-export async function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 5) {
+async function rawApiRequest (endpoint, method = 'GET', body = null, bypassCache = false) {
   const disableCacheEnv = process.env.JULES_DISABLE_CACHE === 'true' || process.env.JULES_DISABLE_CACHE === '1'
   const isMutation = method.toUpperCase() !== 'GET'
   const shouldBypass = bypassCache || disableCacheEnv || isMutation
@@ -164,34 +164,89 @@ export async function apiRequest (endpoint, method = 'GET', body = null, bypassC
   }
 
   const fetcher = shouldBypass ? fetch : cachedFetch
-  let attempt = 0
-  while (true) {
-    const res = await fetcher(`${BASE_URL}/${endpoint}`, options)
-    if (!res.ok) {
-      const errorText = await res.text()
-      log(`API Error: ${res.status} - ${errorText}`)
-      if (res.status === 429 && attempt < retries) {
-        attempt++
+  const res = await fetcher(`${BASE_URL}/${endpoint}`, options)
+  if (!res.ok) {
+    const errorText = await res.text()
+    log(`API Error: ${res.status} - ${errorText}`)
+    const err = new Error(`API Error (${res.status}): ${errorText}`)
+    err.status = res.status
+    throw err
+  }
+  const data = await res.json()
+  log(`API Response from ${endpoint}: %O`, data)
+  return data
+}
+
+let apiQueue = []
+let isProcessingQueue = false
+let currentRequestDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
+let lastRequestEndTime = 0
+
+async function processApiQueue () {
+  if (isProcessingQueue) return
+  isProcessingQueue = true
+
+  while (apiQueue.length > 0) {
+    const item = apiQueue[0]
+    const baseDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
+
+    const now = Date.now()
+    const elapsed = now - lastRequestEndTime
+    if (elapsed < currentRequestDelay) {
+      await new Promise((resolve) => setTimeout(resolve, currentRequestDelay - elapsed))
+    }
+
+    try {
+      const result = await rawApiRequest(item.endpoint, item.method, item.body, item.bypassCache)
+      apiQueue.shift()
+      lastRequestEndTime = Date.now()
+      if (!process.env.JULES_POLL_INTERVAL) {
+        currentRequestDelay = Math.max(baseDelay, Math.round(currentRequestDelay / 1.5))
+      } else {
+        currentRequestDelay = parseInt(process.env.JULES_POLL_INTERVAL, 10)
+      }
+      item.resolve(result)
+    } catch (err) {
+      const is429 = (err && err.status === 429) || (err && err.message && err.message.includes('429'))
+      if (is429 && item.attempt < item.retries) {
+        item.attempt++
         if (process.env.DEBUG) {
-          console.log(`\x1b[31mError in apiRequest (${endpoint}): HTTP 429 - ${errorText}\x1b[0m`)
+          console.log(`\x1b[31mError in apiRequest (${item.endpoint}): HTTP 429 - ${err.message}\x1b[0m`)
         } else {
           console.log('\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m')
         }
-        const backoffDelay = process.env.JULES_POLL_INTERVAL
-          ? parseInt(process.env.JULES_POLL_INTERVAL, 10)
-          : Math.min(30000, Math.pow(2, attempt) * 1000 + Math.floor(Math.random() * 500))
-        log(`HTTP 429 encountered in apiRequest (${endpoint}). Retrying in ${backoffDelay}ms (attempt ${attempt}/${retries})...`)
-        await new Promise((resolve) => setTimeout(resolve, backoffDelay))
-        continue
+        if (!process.env.JULES_POLL_INTERVAL) {
+          currentRequestDelay = Math.min(30000, Math.max(currentRequestDelay * 2, baseDelay * 2))
+        } else {
+          currentRequestDelay = parseInt(process.env.JULES_POLL_INTERVAL, 10)
+        }
+        lastRequestEndTime = Date.now()
+        await new Promise((resolve) => setTimeout(resolve, currentRequestDelay))
+      } else {
+        apiQueue.shift()
+        lastRequestEndTime = Date.now()
+        item.reject(err)
       }
-      const err = new Error(`API Error (${res.status}): ${errorText}`)
-      err.status = res.status
-      throw err
     }
-    const data = await res.json()
-    log(`API Response from ${endpoint}: %O`, data)
-    return data
   }
+
+  isProcessingQueue = false
+}
+
+export function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 5) {
+  return new Promise((resolve, reject) => {
+    apiQueue.push({
+      endpoint,
+      method,
+      body,
+      bypassCache,
+      retries,
+      attempt: 0,
+      resolve,
+      reject
+    })
+    processApiQueue()
+  })
 }
 
 export async function fetchSources () {

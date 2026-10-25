@@ -9,8 +9,6 @@ export async function tail (sessionId, options = {}) {
   let lastState = null
   let lastUpdateTime = null
 
-  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
-
   while (true) {
     try {
       const session = await apiRequest(fullSessionId, 'GET', null, true)
@@ -49,7 +47,6 @@ export async function tail (sessionId, options = {}) {
     } catch (err) {
       handlePollingError(err, 'tail command')
     }
-    await new Promise((resolve) => setTimeout(resolve, pollInterval))
   }
 }
 

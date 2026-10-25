@@ -31,8 +31,6 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
   let hasStarted = false
   const startIndex = lastSeenActivityIndex
 
-  const pollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
-
   while (true) {
     try {
       const session = await apiRequest(fullSessionId, 'GET', null, true)
@@ -86,7 +84,6 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
     } catch (err) {
       handlePollingError(err, 'send command')
     }
-    await new Promise((resolve) => setTimeout(resolve, pollInterval))
   }
 }
 

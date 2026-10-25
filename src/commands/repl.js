@@ -366,7 +366,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (!rl.closed) {
-      tailTimeout = setTimeout(poll, currentPollInterval)
+      tailTimeout = setTimeout(poll, 0)
     }
   }
 
