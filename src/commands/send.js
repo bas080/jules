@@ -22,7 +22,7 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
   }
 
   await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: message })
-  console.error('\x1b[90m(Message sent... Waiting for Jules to complete...)\x1b[0m\n')
+  console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m\n')
 
   let lastState = null
   let lastUpdateTime = initialUpdateTime
