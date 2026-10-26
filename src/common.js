@@ -535,3 +535,56 @@ export function loadSessionState (sessionId) {
   }
   return { name: null, color: null, queue: [], queueMode: null, queueDispatch: null, autoSend: null }
 }
+
+export function getSourceStateFilePath (source) {
+  if (!source) return null
+  const cleanSource = formatSourceDisplay(source).replace(/[/\\?%*:|"<>]/g, '__')
+  const stateDir = path.join(os.homedir(), '.jules-cache', 'sources')
+  if (!fs.existsSync(stateDir)) {
+    fs.mkdirSync(stateDir, { recursive: true })
+  }
+  return path.join(stateDir, `${cleanSource}.json`)
+}
+
+export function saveSourceColor (source, color) {
+  const file = getSourceStateFilePath(source)
+  if (!file) return
+  try {
+    let stateObj = {}
+    if (fs.existsSync(file)) {
+      try {
+        stateObj = JSON.parse(fs.readFileSync(file, 'utf8')) || {}
+      } catch (e) {}
+    }
+    if (color) {
+      stateObj.color = color
+      fs.writeFileSync(file, JSON.stringify(stateObj, null, 2), 'utf8')
+    } else if (fs.existsSync(file)) {
+      delete stateObj.color
+      if (Object.keys(stateObj).length === 0) {
+        fs.unlinkSync(file)
+      } else {
+        fs.writeFileSync(file, JSON.stringify(stateObj, null, 2), 'utf8')
+      }
+    }
+  } catch (err) {
+    log(`Failed to save source color for ${source}: ${err.message}`)
+  }
+}
+
+export function loadSourceColor (source) {
+  const file = getSourceStateFilePath(source)
+  if (!file) return null
+  try {
+    if (fs.existsSync(file)) {
+      const data = fs.readFileSync(file, 'utf8')
+      const parsed = JSON.parse(data)
+      if (parsed && typeof parsed === 'object' && parsed.color) {
+        return parsed.color
+      }
+    }
+  } catch (err) {
+    log(`Failed to load source color for ${source}: ${err.message}`)
+  }
+  return null
+}
