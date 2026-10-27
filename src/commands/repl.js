@@ -31,7 +31,7 @@ import { archiveSession } from './cleanup.js'
 export async function printStatusReport (fullSessionId) {
   try {
     const cleanId = fullSessionId.replace(/^sessions\//, '')
-    const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+    const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true, 5, true)
     const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
     const sourceDisplay = formatSourceDisplay(rawSource)
 
@@ -325,7 +325,7 @@ export async function repl (sessionId, options = {}) {
         console.log('\n\x1b[36m📤 Sending queued message(s) to Jules...\x1b[0m')
       })
       try {
-        await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
+        await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload }, false, 5, true)
         printAbovePrompt(() => {
           console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
         })
@@ -906,7 +906,7 @@ export async function repl (sessionId, options = {}) {
         updatePrompt()
         console.log(`\n\x1b[36m📤 Sending queued item ${arg} to Jules...\x1b[0m`)
         try {
-          await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload })
+          await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: payload }, false, 5, true)
           console.log('\x1b[90m(Messages flushed and sent immediately... Agent is thinking...)\x1b[0m')
         } catch (err) {
           console.log(renderMarkdown(`❌ **Error sending queued message:** ${err.message}`))
@@ -947,7 +947,7 @@ export async function repl (sessionId, options = {}) {
 
     if (text === '/approve' || text.startsWith('/approve')) {
       try {
-        await apiRequest(`${fullSessionId}:approvePlan`, 'POST', {})
+        await apiRequest(`${fullSessionId}:approvePlan`, 'POST', {}, false, 5, true)
         console.log('\x1b[32m✔ Plan approved!\x1b[0m')
         clearTimeout(tailTimeout)
         tailTimeout = setTimeout(async () => {
@@ -985,7 +985,7 @@ export async function repl (sessionId, options = {}) {
           lastState = 'IN_PROGRESS'
           updatePrompt()
           try {
-            await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: formatted.trim() })
+            await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: formatted.trim() }, false, 5, true)
             console.log('\x1b[90m(File uploaded... Agent is thinking...)\x1b[0m')
             clearTimeout(tailTimeout)
             tailTimeout = setTimeout(async () => {
@@ -1054,7 +1054,7 @@ export async function repl (sessionId, options = {}) {
     updatePrompt()
     hasPulledForWork = false
     try {
-      await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: promptToSend })
+      await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: promptToSend }, false, 5, true)
       console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m')
       clearTimeout(tailTimeout)
       tailTimeout = setTimeout(async () => {

@@ -179,7 +179,7 @@ async function rawApiRequest (endpoint, method = 'GET', body = null, bypassCache
 
 let apiQueue = []
 let isProcessingQueue = false
-let currentRequestDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
+let currentRequestDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 500
 let lastRequestEndTime = 0
 
 async function processApiQueue () {
@@ -188,7 +188,7 @@ async function processApiQueue () {
 
   while (apiQueue.length > 0) {
     const item = apiQueue[0]
-    const baseDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
+    const baseDelay = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 500
 
     const now = Date.now()
     const elapsed = now - lastRequestEndTime
@@ -216,7 +216,7 @@ async function processApiQueue () {
           console.log('\x1b[33m⚠️ Rate limit reached (HTTP 429). Retrying with backoff...\x1b[0m')
         }
         if (!process.env.JULES_POLL_INTERVAL) {
-          currentRequestDelay = Math.min(30000, Math.max(currentRequestDelay * 2, baseDelay * 2))
+          currentRequestDelay = Math.min(30000, Math.max(currentRequestDelay * 2, 2000))
         } else {
           currentRequestDelay = parseInt(process.env.JULES_POLL_INTERVAL, 10)
         }
@@ -233,9 +233,9 @@ async function processApiQueue () {
   isProcessingQueue = false
 }
 
-export function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 5) {
+export function apiRequest (endpoint, method = 'GET', body = null, bypassCache = false, retries = 5, priority = false) {
   return new Promise((resolve, reject) => {
-    apiQueue.push({
+    const task = {
       endpoint,
       method,
       body,
@@ -244,7 +244,12 @@ export function apiRequest (endpoint, method = 'GET', body = null, bypassCache =
       attempt: 0,
       resolve,
       reject
-    })
+    }
+    if (priority && apiQueue.length > 1) {
+      apiQueue.splice(1, 0, task)
+    } else {
+      apiQueue.push(task)
+    }
     processApiQueue()
   })
 }

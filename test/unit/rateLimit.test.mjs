@@ -107,4 +107,27 @@ describe('rateLimit Unit Tests', () => {
     assert.strictEqual(stdoutLogs.length, 1)
     assert.match(stdoutLogs[0], /Rate limit reached \(HTTP 429\)\. Retrying with backoff\.\.\./)
   })
+
+  test('apiRequest respects priority ordering for user-initiated tasks', async () => {
+    process.env.JULES_POLL_INTERVAL = '5'
+    const order = []
+
+    global.fetch = async (url) => {
+      order.push(url)
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true })
+      }
+    }
+
+    const req1 = apiRequest('first', 'GET', null, true)
+    const req2 = apiRequest('second', 'GET', null, true)
+    const reqPriority = apiRequest('priority-user-cmd', 'GET', null, true, 5, true)
+
+    await Promise.all([req1, req2, reqPriority])
+    assert.strictEqual(order[0].endsWith('/first'), true)
+    assert.strictEqual(order[1].endsWith('/priority-user-cmd'), true)
+    assert.strictEqual(order[2].endsWith('/second'), true)
+  })
 })
