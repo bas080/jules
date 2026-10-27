@@ -17,6 +17,8 @@ import {
   formatSourceDisplay,
   loadSessionState,
   saveSessionState,
+  loadSourceColor,
+  saveSourceColor,
   renderMarkdown,
   sessionPatches,
   sendDesktopNotification,
@@ -50,27 +52,30 @@ export async function repl (sessionId, options = {}) {
 
   const sessionState = loadSessionState(fullSessionId)
   let basePromptLabel = sessionState.name
+  let sessionSource = options.source ? formatSourceDisplay(options.source) : null
+
+  try {
+    const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+    const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
+    if (rawSource) {
+      const formatted = formatSourceDisplay(rawSource)
+      if (formatted && formatted !== 'none') {
+        sessionSource = formatted
+        if (!basePromptLabel && !options.name) {
+          basePromptLabel = formatted
+        }
+      }
+    }
+  } catch (err) {
+    log(`Failed to fetch session info for prompt source label: ${err.message}`)
+  }
 
   if (options.name) {
     basePromptLabel = options.name
     sessionState.name = options.name
     saveSessionState(fullSessionId, sessionState)
   } else if (!basePromptLabel) {
-    try {
-      const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
-      const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
-      if (rawSource) {
-        const formatted = formatSourceDisplay(rawSource)
-        if (formatted && formatted !== 'none') {
-          basePromptLabel = formatted
-        }
-      }
-    } catch (err) {
-      log(`Failed to fetch session info for prompt source label: ${err.message}`)
-    }
-    if (!basePromptLabel) {
-      basePromptLabel = shortSessionId
-    }
+    basePromptLabel = shortSessionId
   }
 
   const bgColors = {
@@ -86,7 +91,8 @@ export async function repl (sessionId, options = {}) {
     default: '\x1b[42m\x1b[30m'
   }
 
-  let promptColorCode = bgColors[sessionState.color] || bgColors.default
+  let sourceColor = sessionSource ? loadSourceColor(sessionSource) : null
+  let promptColorCode = bgColors[sourceColor || sessionState.color] || bgColors.default
 
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`)
   console.log('\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n')
@@ -119,7 +125,7 @@ export async function repl (sessionId, options = {}) {
   let lastMessageSentTime = 0
   const sendCooldown = process.env.JULES_SEND_COOLDOWN ? parseInt(process.env.JULES_SEND_COOLDOWN, 10) : (process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 60000)
 
-  const minPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 1000
+  const minPollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
   const maxPollInterval = 300000
   let currentPollInterval = minPollInterval
   let lastInteractionTime = Date.now()
@@ -361,15 +367,12 @@ export async function repl (sessionId, options = {}) {
         }
       }
     } catch (err) {
-      if (isRateLimitError(err)) {
-        currentPollInterval = Math.min(currentPollInterval * 2, 30000)
-      }
       handlePollingError(err, 'REPL background loop')
       safePrompt(true)
     }
 
     if (!rl.closed) {
-      tailTimeout = setTimeout(poll, currentPollInterval)
+      tailTimeout = setTimeout(poll, 0)
     }
   }
 
@@ -611,6 +614,10 @@ export async function repl (sessionId, options = {}) {
           messageQueue.push(...newSessionState.queue)
         }
 
+        sessionSource = sourceForNewSession || sessionSource
+        const newSourceColor = sessionSource ? loadSourceColor(sessionSource) : null
+        promptColorCode = bgColors[newSourceColor || sessionState.color] || bgColors.default
+
         if (options.name) {
           basePromptLabel = options.name
         } else if (sourceForNewSession) {
@@ -743,8 +750,12 @@ export async function repl (sessionId, options = {}) {
       }
 
       promptColorCode = bgColors[colorArg]
-      sessionState.color = colorArg
-      saveSessionState(fullSessionId, sessionState)
+      if (sessionSource) {
+        saveSourceColor(sessionSource, colorArg)
+      } else {
+        sessionState.color = colorArg
+        saveSessionState(fullSessionId, sessionState)
+      }
       updatePrompt()
       console.log(renderMarkdown(`✔ **REPL prompt color set to ${colorArg}.**`))
       rl.prompt()

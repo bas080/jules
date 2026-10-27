@@ -3,7 +3,6 @@ import {
   fetchAllActivities,
   printActivity,
   readStdin,
-  isRateLimitError,
   handlePollingError
 } from '../common.js'
 
@@ -23,7 +22,7 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
   }
 
   await apiRequest(`${fullSessionId}:sendMessage`, 'POST', { prompt: message })
-  console.error('\x1b[90m(Message sent... Waiting for Jules to complete...)\x1b[0m\n')
+  console.log('\x1b[90m(Message sent... Agent is thinking...)\x1b[0m\n')
 
   let lastState = null
   let lastUpdateTime = initialUpdateTime
@@ -31,9 +30,6 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
   let hasFailedActivity = false
   let hasStarted = false
   const startIndex = lastSeenActivityIndex
-
-  const basePollInterval = process.env.JULES_POLL_INTERVAL ? parseInt(process.env.JULES_POLL_INTERVAL, 10) : 3000
-  let currentPollInterval = basePollInterval
 
   while (true) {
     try {
@@ -85,14 +81,9 @@ export async function sendMessageAndTail (sessionId, message, options = {}) {
         console.error('\n\x1b[32m✔ Jules is done. Process exiting.\x1b[0m\n')
         process.exit(0)
       }
-      currentPollInterval = basePollInterval
     } catch (err) {
-      if (isRateLimitError(err)) {
-        currentPollInterval = process.env.JULES_POLL_INTERVAL ? basePollInterval : Math.min(currentPollInterval * 2, 30000)
-      }
       handlePollingError(err, 'send command')
     }
-    await new Promise((resolve) => setTimeout(resolve, currentPollInterval))
   }
 }
 
