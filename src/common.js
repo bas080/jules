@@ -281,6 +281,61 @@ export function formatSourceDisplay (s) {
   return display
 }
 
+export function getPrInfo (sessionInfo = {}, activities = []) {
+  let prObj = null
+
+  if (sessionInfo && sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
+    for (const out of sessionInfo.outputs) {
+      if (out && out.pullRequest) {
+        prObj = out.pullRequest
+        break
+      }
+    }
+  }
+
+  if (!prObj && Array.isArray(activities)) {
+    for (let i = activities.length - 1; i >= 0; i--) {
+      const act = activities[i]
+      if (act && act.artifacts && Array.isArray(act.artifacts)) {
+        for (const art of act.artifacts) {
+          if (art && art.pullRequest) {
+            prObj = art.pullRequest
+            break
+          }
+        }
+      }
+      if (prObj) break
+    }
+  }
+
+  if (!prObj || (!prObj.url && !prObj.title && !prObj.number)) {
+    return { url: null, status: 'None generated yet', isMerged: false, prObj: null }
+  }
+
+  const url = prObj.url || null
+  const isMerged = Boolean(
+    prObj.merged === true ||
+    prObj.state === 'MERGED' ||
+    prObj.mergedState === 'MERGED' ||
+    prObj.isMerged === true
+  )
+
+  let label = ''
+  if (isMerged) {
+    label = 'Merged ✔'
+  } else if (prObj.state === 'CLOSED') {
+    label = 'Closed (Not merged)'
+  } else if (prObj.state === 'OPEN' || url) {
+    label = 'Open (Not merged)'
+  } else {
+    label = 'Not merged'
+  }
+
+  const status = url ? `${label} (${url})` : label
+
+  return { url, status, isMerged, prObj }
+}
+
 export function listSessionsFromList (sessions) {
   const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
   const maxColWidth = Math.max(15, Math.floor((termCols - 20) / 4))

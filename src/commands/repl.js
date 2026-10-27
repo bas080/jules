@@ -15,6 +15,7 @@ import {
   handlePollingError,
   readAndFormatLocalFile,
   formatSourceDisplay,
+  getPrInfo,
   loadSessionState,
   saveSessionState,
   loadSourceColor,
@@ -26,6 +27,66 @@ import {
 } from '../common.js'
 import { createSession } from './create.js'
 import { archiveSession } from './cleanup.js'
+
+export async function printStatusReport (fullSessionId) {
+  try {
+    const cleanId = fullSessionId.replace(/^sessions\//, '')
+    const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
+    const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
+    const sourceDisplay = formatSourceDisplay(rawSource)
+
+    let branch = null
+    if (sessionInfo.sourceContext && sessionInfo.sourceContext.githubRepoContext && sessionInfo.sourceContext.githubRepoContext.startingBranch) {
+      branch = sessionInfo.sourceContext.githubRepoContext.startingBranch
+    } else if (sessionInfo.startingBranch) {
+      branch = sessionInfo.startingBranch
+    }
+
+    let lastUserMessage = null
+    let activities = []
+    try {
+      activities = await fetchAllActivities(fullSessionId)
+      for (let i = activities.length - 1; i >= 0; i--) {
+        const act = activities[i]
+        if (act.userMessaged && act.userMessaged.userMessage) {
+          lastUserMessage = act.userMessaged.userMessage.trim()
+          break
+        }
+      }
+    } catch (err) {
+      log(`Failed to fetch activities for status report: ${err.message}`)
+    }
+
+    const prInfo = getPrInfo(sessionInfo, activities)
+
+    const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
+    const maxValWidth = Math.max(25, termCols - 28)
+
+    function formatVal (val) {
+      if (!val) return ''
+      const clean = String(val).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
+      if (clean.length <= maxValWidth) return clean
+      return clean.slice(0, Math.max(0, maxValWidth - 3)) + '...'
+    }
+
+    let statusMd = '# Session Status\n\n'
+    statusMd += '| Property | Value |\n| --- | --- |\n'
+    statusMd += `| **session** | ${formatVal(fullSessionId)} |\n`
+    if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${formatVal(sourceDisplay)} |\n`
+    if (branch) statusMd += `| **branch** | ${formatVal(branch)} |\n`
+    if (sessionInfo.title) statusMd += `| **title** | ${formatVal(sessionInfo.title)} |\n`
+    if (sessionInfo.state) statusMd += `| **state** | ${formatVal(sessionInfo.state)} |\n`
+    if (lastUserMessage) statusMd += `| **last message** | ${formatVal(lastUserMessage)} |\n`
+    if (sessionInfo.createTime) statusMd += `| **created** | ${formatVal(sessionInfo.createTime)} |\n`
+    if (sessionInfo.updateTime) statusMd += `| **updated** | ${formatVal(sessionInfo.updateTime)} |\n`
+    statusMd += `| **pr** | ${formatVal(prInfo.status)} |\n`
+    statusMd += `| **web** | ${formatVal(`https://jules.google.com/session/${cleanId}`)} |\n`
+
+    console.log(`\n${renderMarkdown(statusMd)}\n`)
+  } catch (err) {
+    console.log(renderMarkdown(`❌ **Error fetching session status:** ${err.message}`))
+  }
+}
 
 export async function repl (sessionId, options = {}) {
   process.title = 'jules-repl'
@@ -95,6 +156,7 @@ export async function repl (sessionId, options = {}) {
   let promptColorCode = bgColors[sourceColor || sessionState.color] || bgColors.default
 
   console.log(`\x1b[36mJules REPL started for session:\x1b[0m ${fullSessionId}`)
+  await printStatusReport(fullSessionId)
   console.log('\x1b[90mType your message and press Enter. Press Ctrl+C to exit.\x1b[0m\n')
 
   function saveQueue (sessionId, queue) {
@@ -409,80 +471,7 @@ export async function repl (sessionId, options = {}) {
     }
 
     if (text === '/status' || text.startsWith('/status')) {
-      try {
-        const cleanId = fullSessionId.replace(/^sessions\//, '')
-        const sessionInfo = await apiRequest(fullSessionId, 'GET', null, true)
-        const rawSource = sessionInfo.sourceContext || sessionInfo.source || sessionInfo.sourceId
-        const sourceDisplay = formatSourceDisplay(rawSource)
-
-        let branch = null
-        if (sessionInfo.sourceContext && sessionInfo.sourceContext.githubRepoContext && sessionInfo.sourceContext.githubRepoContext.startingBranch) {
-          branch = sessionInfo.sourceContext.githubRepoContext.startingBranch
-        } else if (sessionInfo.startingBranch) {
-          branch = sessionInfo.startingBranch
-        }
-
-        let prUrl = null
-        let lastUserMessage = null
-
-        if (sessionInfo.outputs && Array.isArray(sessionInfo.outputs)) {
-          for (const out of sessionInfo.outputs) {
-            if (out.pullRequest && out.pullRequest.url) {
-              prUrl = out.pullRequest.url
-              break
-            }
-          }
-        }
-
-        try {
-          const activities = await fetchAllActivities(fullSessionId)
-          for (let i = activities.length - 1; i >= 0; i--) {
-            const act = activities[i]
-            if (!lastUserMessage && act.userMessaged && act.userMessaged.userMessage) {
-              lastUserMessage = act.userMessaged.userMessage.trim()
-            }
-            if (!prUrl && act.artifacts && Array.isArray(act.artifacts)) {
-              for (const art of act.artifacts) {
-                if (art.pullRequest && art.pullRequest.url) {
-                  prUrl = art.pullRequest.url
-                  break
-                }
-              }
-            }
-            if (prUrl && lastUserMessage) break
-          }
-        } catch (err) {
-          log(`Failed to fetch activities for /status: ${err.message}`)
-        }
-
-        const termCols = process.stdout && process.stdout.columns ? process.stdout.columns : 100
-        const maxValWidth = Math.max(25, termCols - 28)
-
-        function formatVal (val) {
-          if (!val) return ''
-          const clean = String(val).replace(/\|/g, '\\|').replace(/\r?\n/g, ' ')
-          if (clean.length <= maxValWidth) return clean
-          return clean.slice(0, Math.max(0, maxValWidth - 3)) + '...'
-        }
-
-        let statusMd = '# Session Status\n\n'
-        statusMd += '| Property | Value |\n| --- | --- |\n'
-        statusMd += `| **session** | ${formatVal(fullSessionId)} |\n`
-        if (sourceDisplay && sourceDisplay !== 'none') statusMd += `| **source** | ${formatVal(sourceDisplay)} |\n`
-        if (branch) statusMd += `| **branch** | ${formatVal(branch)} |\n`
-        if (sessionInfo.title) statusMd += `| **title** | ${formatVal(sessionInfo.title)} |\n`
-        if (sessionInfo.state) statusMd += `| **state** | ${formatVal(sessionInfo.state)} |\n`
-        if (lastUserMessage) statusMd += `| **last message** | ${formatVal(lastUserMessage)} |\n`
-        if (sessionInfo.createTime) statusMd += `| **created** | ${formatVal(sessionInfo.createTime)} |\n`
-        if (sessionInfo.updateTime) statusMd += `| **updated** | ${formatVal(sessionInfo.updateTime)} |\n`
-        if (prUrl) statusMd += `| **pr** | ${formatVal(prUrl)} |\n`
-        else statusMd += '| **pr** | None generated yet |\n'
-        statusMd += `| **web** | ${formatVal(`https://jules.google.com/session/${cleanId}`)} |\n`
-
-        console.log(`\n${renderMarkdown(statusMd)}\n`)
-      } catch (err) {
-        console.log(renderMarkdown(`❌ **Error fetching session status:** ${err.message}`))
-      }
+      await printStatusReport(fullSessionId)
       rl.prompt()
       return
     }
